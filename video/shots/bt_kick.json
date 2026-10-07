@@ -1,0 +1,6 @@
+{"lead": 0.8, "tail": 2.0, "steps": [
+  {"op": ["god", "1"]}, {"pitch": -5}, {"pose": 1},
+  {"ahead": [2.5, 0, "summon minecraft:zombie {x} {y} {z} {{NoAI:0b}}", 0]},
+  {"wait": 1.5}, {"mark": "kick"}, {"op": ["kick"]},
+  {"wait": 0.6}, {"op": ["slowmo"]}, {"wait": 2.5}, {"op": ["slowmo"]}
+]}

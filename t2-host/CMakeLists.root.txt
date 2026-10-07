@@ -1,0 +1,12 @@
+# UE4SS + the Trepang2 host mod, built together (the mod links against this exact UE4SS build). UE4SS (unmodified,
+# commit e3ba101) and the ReShade headers come from checkouts given by UE4SS_SRC / RESHADE_INCLUDE (-D on cmake).
+cmake_minimum_required(VERSION 3.22)
+project(T2Mods)
+
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+set(UE4SS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/../../ron-mc-passthrough/src/RE-UE4SS" CACHE PATH "RE-UE4SS checkout")
+set(RESHADE_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/../../ron-mc-passthrough/src/reshade/include" CACHE PATH "ReShade add-on headers")
+add_subdirectory(${UE4SS_SRC} RE-UE4SS)
+add_subdirectory(t2-host)

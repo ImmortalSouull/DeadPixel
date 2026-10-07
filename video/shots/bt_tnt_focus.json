@@ -1,0 +1,11 @@
+{"lead": 1.0, "tail": 2.0, "steps": [
+  {"op": ["god", "1"]}, {"pitch": -8}, {"pose": 1},
+  {"ahead": [7, -1, "fill {ix} {iy} {iz} {ix} {iy2} {iz} minecraft:oak_planks", 0]},
+  {"ahead": [7, 0, "fill {ix} {iy} {iz} {ix} {iy2} {iz} minecraft:oak_planks", 0]},
+  {"ahead": [7, 1, "fill {ix} {iy} {iz} {ix} {iy2} {iz} minecraft:oak_planks", 0]},
+  {"ahead": [6, 0, "summon minecraft:tnt {x} {y} {z} {{fuse:60}}", 0]},
+  {"ahead": [6, 1, "summon minecraft:tnt {x} {y} {z} {{fuse:62}}", 0]},
+  {"ahead": [6, -1, "summon minecraft:tnt {x} {y} {z} {{fuse:64}}", 0]},
+  {"wait": 1.2}, {"mark": "focus on"}, {"op": ["slowmo"]},
+  {"wait": 6.0}, {"mark": "focus off"}, {"op": ["slowmo"]}
+]}

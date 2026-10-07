@@ -1,0 +1,4 @@
+{"lead": 1.0, "tail": 1.0, "steps": [
+  {"op": ["god", "1"]}, {"op": ["mobsat", "4"]}, {"wait": 2.0}, {"mark": "fight"},
+  {"op": ["mobs", "3"]}, {"wait": 12.0}
+]}

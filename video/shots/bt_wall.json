@@ -1,0 +1,20 @@
+{"lead": 1.0, "tail": 1.5, "steps": [
+  {"op": ["god", "1"]}, {"pitch": -4}, {"pose": 1},
+  {"ahead": [5, -2, "fill {ix} {iy} {iz} {ix} {iy2} {iz} minecraft:stone_bricks", 0]},
+  {"ahead": [5, -1, "fill {ix} {iy} {iz} {ix} {iy2} {iz} minecraft:oak_planks", 0]},
+  {"ahead": [5, 0, "fill {ix} {iy} {iz} {ix} {iy2} {iz} minecraft:glass", 0]},
+  {"ahead": [5, 1, "fill {ix} {iy} {iz} {ix} {iy2} {iz} minecraft:dirt", 0]},
+  {"ahead": [5, 2, "fill {ix} {iy} {iz} {ix} {iy2} {iz} minecraft:bricks", 0]},
+  {"wait": 2.0}, {"mark": "wall up"},
+  {"yaw": [-22, 4, 60]}, {"fire": [4, 260]},
+  {"yaw": [11, 3, 60]}, {"fire": [3, 260]},
+  {"yaw": [11, 3, 60]}, {"fire": [3, 260]},
+  {"yaw": [11, 3, 60]}, {"fire": [3, 260]},
+  {"yaw": [11, 3, 60]}, {"fire": [4, 260]},
+  {"pitch": 6}, {"yaw": [-44, 6, 60]}, {"fire": [3, 260]},
+  {"yaw": [11, 3, 60]}, {"fire": [3, 260]},
+  {"yaw": [11, 3, 60]}, {"fire": [3, 260]},
+  {"yaw": [11, 3, 60]}, {"fire": [3, 260]},
+  {"yaw": [11, 3, 60]}, {"fire": [3, 260]},
+  {"mark": "wall down"}
+]}
