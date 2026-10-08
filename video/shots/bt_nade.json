@@ -1,10 +1,10 @@
 {"lead": 1.0, "tail": 2.5, "steps": [
   {"op": ["god", "1"]}, {"pitch": -6}, {"pose": 1},
-  {"ahead": [9, -2, "fill {ix} {iy} {iz} {ix} {iy3} {iz} minecraft:bricks", 0]},
-  {"ahead": [9, -1, "fill {ix} {iy} {iz} {ix} {iy3} {iz} minecraft:bricks", 0]},
-  {"ahead": [9, 0, "fill {ix} {iy} {iz} {ix} {iy3} {iz} minecraft:bricks", 0]},
-  {"ahead": [9, 1, "fill {ix} {iy} {iz} {ix} {iy3} {iz} minecraft:bricks", 0]},
-  {"ahead": [9, 2, "fill {ix} {iy} {iz} {ix} {iy3} {iz} minecraft:bricks", 0]},
+  {"ahead": [6, -2, "fill {ix} {iy} {iz} {ix} {iy3} {iz} minecraft:bricks", 0]},
+  {"ahead": [6, -1, "fill {ix} {iy} {iz} {ix} {iy3} {iz} minecraft:bricks", 0]},
+  {"ahead": [6, 0, "fill {ix} {iy} {iz} {ix} {iy3} {iz} minecraft:bricks", 0]},
+  {"ahead": [6, 1, "fill {ix} {iy} {iz} {ix} {iy3} {iz} minecraft:bricks", 0]},
+  {"ahead": [6, 2, "fill {ix} {iy} {iz} {ix} {iy3} {iz} minecraft:bricks", 0]},
   {"wait": 1.5}, {"pitch": 4}, {"mark": "throw"}, {"op": ["nade"]},
   {"wait": 4.0}
 ]}

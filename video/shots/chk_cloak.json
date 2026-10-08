@@ -1,0 +1,6 @@
+{"lead": 0.3, "tail": 0.3, "steps": [
+  {"op": ["god", "1"]}, {"pitch": -4}, {"pose": 1}, {"clear": 12}, {"wait": 0.8},
+  {"op": ["hunt", "1"]}, {"op": ["mobs", "3"]}, {"wait": 5.0}, {"op": ["mobdist"]}, {"shot": "lab/shots/cloak0.png"},
+  {"mark": "cloak on"}, {"op": ["cloak"]}, {"wait": 4.0}, {"op": ["mobdist"]}, {"shot": "lab/shots/cloak1.png"},
+  {"wait": 4.0}, {"op": ["mobdist"]}, {"shot": "lab/shots/cloak2.png"}
+]}

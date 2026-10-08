@@ -1,5 +1,5 @@
 #![windows_subsystem = "windows"]
-//! Blocktime: the installer and launcher of the Trepang2 x Minecraft passthrough mod.
+//! DeadPixel: the installer and launcher of the Trepang2 x Minecraft passthrough mod.
 
 mod core;
 mod i18n;
@@ -18,8 +18,9 @@ use crate::ui::*;
 
 const W: f32 = 1080.0;
 const H: f32 = 700.0;
-/// the left menu's width; the pages start right of it
-const SIDE: f32 = 300.0;
+/// the header (name, window buttons) and the tab row under it; the pages start below
+const HEADER: f32 = 66.0;
+const TOP: f32 = HEADER + 42.0;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Page {
@@ -188,22 +189,34 @@ fn install_fonts(ctx: &egui::Context) {
     let add = |fonts: &mut egui::FontDefinitions, name: &str, data: &'static [u8]| {
         fonts.font_data.insert(name.to_owned(), Arc::new(egui::FontData::from_static(data)));
     };
-    add(&mut fonts, "oswald_b", include_bytes!("../assets/Oswald-Bold.ttf"));
-    add(&mut fonts, "oswald_m", include_bytes!("../assets/Oswald-Medium.ttf"));
-    add(&mut fonts, "roboto", include_bytes!("../assets/RobotoCond-Regular.ttf"));
-    add(&mut fonts, "roboto_b", include_bytes!("../assets/RobotoCond-SemiBold.ttf"));
-    add(&mut fonts, "jetbrains", include_bytes!("../assets/JetBrainsMono-Bold.ttf"));
+    add(&mut fonts, "chakra_b", include_bytes!("../assets/ChakraPetch-Bold.ttf"));
+    add(&mut fonts, "chakra_sb", include_bytes!("../assets/ChakraPetch-SemiBold.ttf"));
+    add(&mut fonts, "chakra", include_bytes!("../assets/ChakraPetch-Regular.ttf"));
+    add(&mut fonts, "sharetech", include_bytes!("../assets/ShareTechMono-Regular.ttf"));
     add(&mut fonts, "press", include_bytes!("../assets/PressStart2P-Regular.ttf"));
+    // Cyrillic, close in style (Chakra Petch and Share Tech Mono have none): Russo One for titles, Play for text,
+    // PT Mono for the terminal lines
+    add(&mut fonts, "russo", include_bytes!("../assets/RussoOne-Regular.ttf"));
+    add(&mut fonts, "play_b", include_bytes!("../assets/Play-Bold.ttf"));
+    add(&mut fonts, "play", include_bytes!("../assets/Play-Regular.ttf"));
+    add(&mut fonts, "ptmono", include_bytes!("../assets/PTMono-Regular.ttf"));
     let fallback: Vec<String> = fonts.families.get(&egui::FontFamily::Proportional).cloned().unwrap_or_default();
-    let with = |first: &str| {
-        let mut v = vec![first.to_owned()];
+    let with = |first: &[&str]| {
+        let mut v: Vec<String> = first.iter().map(|s| s.to_string()).collect();
         v.extend(fallback.iter().cloned());
         v
     };
-    for (family, font) in [("head", "oswald_b"), ("headm", "oswald_m"), ("body", "roboto"), ("bodyb", "roboto_b"), ("mono", "jetbrains"), ("pixel", "press")] {
-        fonts.families.insert(egui::FontFamily::Name(family.into()), with(font));
+    for (family, chain) in [
+        ("head", &["chakra_b", "russo"][..]),
+        ("headm", &["chakra_sb", "play_b"][..]),
+        ("body", &["chakra", "play"][..]),
+        ("bodyb", &["chakra_sb", "play_b"][..]),
+        ("mono", &["sharetech", "ptmono"][..]),
+        ("pixel", &["press", "ptmono"][..]),
+    ] {
+        fonts.families.insert(egui::FontFamily::Name(family.into()), with(chain));
     }
-    fonts.families.insert(egui::FontFamily::Proportional, with("roboto"));
+    fonts.families.insert(egui::FontFamily::Proportional, with(&["chakra", "play"]));
     ctx.set_fonts(fonts);
 }
 
@@ -263,13 +276,9 @@ impl eframe::App for App {
             let full = ui.max_rect();
             let p = ui.painter().clone();
             background(&p, full, t, self.backdrop.as_ref());
-            // the menu column: darker, one line on its right
-            p.rect_filled(Rect::from_min_max(full.min, pos2(full.min.x + SIDE, full.max.y)), CornerRadius::ZERO, with_alpha(Color32::BLACK, 0.45));
-            p.line_segment([pos2(full.min.x + SIDE, full.min.y + 36.0), pos2(full.min.x + SIDE, full.max.y)], Stroke::new(1.0, with_alpha(Color32::WHITE, 0.08)));
-            ground_line(&p, Rect::from_min_max(pos2(full.min.x, full.max.y - 8.0), full.max));
-            self.title_bar(ui, full);
+            self.title_bar(ui, full, t);
             self.nav(ui, full);
-            let content = Rect::from_min_max(pos2(full.min.x + SIDE + 36.0, full.min.y + 60.0), pos2(full.max.x - 32.0, full.max.y - 30.0));
+            let content = Rect::from_min_max(pos2(full.min.x + 36.0, full.min.y + TOP + 22.0), pos2(full.max.x - 36.0, full.max.y - 28.0));
             self.demo_step(ui);
             match self.page {
                 Page::Play => self.page_play(ui, content, t),
@@ -353,7 +362,8 @@ impl App {
         }
         if self.demo_done == 2 && t >= 12.3 {
             self.demo_done = 3;
-            if self.installed_ok() == Some(true) {
+            // DEADPIXEL_DEMO_NOPLAY: the recording wants the install only (no Minecraft Launcher popping up)
+            if self.installed_ok() == Some(true) && std::env::var_os("DEADPIXEL_DEMO_NOPLAY").is_none() {
                 self.start_play();
             }
         }
@@ -361,29 +371,49 @@ impl App {
 }
 
 impl App {
-    fn title_bar(&mut self, ui: &mut egui::Ui, full: Rect) {
-        let bar = Rect::from_min_size(full.min, vec2(full.width(), 36.0));
+    fn title_bar(&mut self, ui: &mut egui::Ui, full: Rect, t: f32) {
+        let tr = self.tr();
+        let bar = Rect::from_min_size(full.min, vec2(full.width(), HEADER));
         let p = ui.painter().clone();
-        p.rect_filled(bar, CornerRadius::ZERO, with_alpha(Color32::BLACK, 0.72));
-        p.line_segment([bar.left_bottom(), bar.right_bottom()], Stroke::new(1.0, with_alpha(Color32::WHITE, 0.08)));
+        p.rect_filled(bar, CornerRadius::ZERO, with_alpha(Color32::BLACK, 0.78));
+        p.line_segment([bar.left_bottom(), bar.right_bottom()], Stroke::new(1.0, with_alpha(Color32::WHITE, 0.10)));
         let drag = ui.interact(bar, ui.id().with("titlebar"), Sense::click_and_drag());
         if drag.drag_started() {
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
         }
         if let Some(logo) = &self.logo {
-            p.image(logo.id(), Rect::from_min_size(bar.min + vec2(12.0, 6.0), vec2(24.0, 24.0)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+            p.image(logo.id(), Rect::from_min_size(bar.min + vec2(18.0, 11.0), vec2(44.0, 44.0)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
         }
-        spaced(&p, bar.min + vec2(46.0, 18.0), Align2::LEFT_CENTER, "BLOCKTIME", head(15.0), TEXT, 2.5);
-        spaced(&p, bar.min + vec2(170.0, 18.0), Align2::LEFT_CENTER, &format!("v{}", core::VERSION), mono(10.0), FAINT, 1.0);
-        // which game is up, like radio channels
-        let mut x = bar.max.x - 300.0;
-        for (name, live, color) in [("T2", self.game_live, POLICE_RED), ("MC", self.mc_live, GREEN)] {
-            lamp(&p, pos2(x, bar.center().y), color, live);
-            spaced(&p, pos2(x + 12.0, bar.center().y), Align2::LEFT_CENTER, name, mono(10.0), if live { TEXT } else { FAINT }, 1.5);
-            x += 64.0;
+        let w = wordmark(&p, bar.min + vec2(74.0, 25.0), 20.0, TEXT);
+        spaced(&p, bar.min + vec2(75.0, 49.0), Align2::LEFT_CENTER, "TREPANG2 x MINECRAFT  //  SUBJECT 106  //  16 x 16", mono(11.5), DIM, 1.5);
+        spaced(&p, bar.min + vec2(88.0 + w, 24.0), Align2::LEFT_CENTER, &format!("v{}", core::VERSION), mono(11.0), CYAN, 1.0);
+        // the two games, as live feeds
+        let mut x = bar.max.x - 360.0;
+        for (name, live) in [("T2 SIGNAL", self.game_live), ("MC SIGNAL", self.mc_live)] {
+            let lit = live && (t * 2.0).sin() > -0.6;
+            led(&p, pos2(x, bar.center().y), if live { GREEN } else { FAINT }, lit);
+            spaced(&p, pos2(x + 12.0, bar.center().y), Align2::LEFT_CENTER, name, mono(11.5), if live { TEXT } else { FAINT }, 1.5);
+            x += 92.0;
         }
-        let close = Rect::from_min_size(pos2(bar.max.x - 46.0, bar.min.y), vec2(46.0, 36.0));
-        let min = Rect::from_min_size(pos2(bar.max.x - 92.0, bar.min.y), vec2(46.0, 36.0));
+        // language
+        let mut lx = bar.max.x - 160.0;
+        for (code, label) in [("en", "EN"), ("ru", "RU")] {
+            let r = Rect::from_center_size(pos2(lx, bar.center().y), vec2(30.0, 22.0));
+            let resp = ui.interact(r, ui.id().with(("lang", code)), Sense::click());
+            let on = self.state.settings.language == code;
+            if on {
+                pixel_rect(&p, r, ACCENT, None);
+            }
+            p.text(r.center(), Align2::CENTER_CENTER, label, mono(12.0), if on { Color32::BLACK } else if resp.hovered() { TEXT } else { DIM });
+            if resp.clicked() {
+                self.state.settings.language = code.into();
+                self.state.save();
+            }
+            lx += 34.0;
+        }
+        let _ = tr;
+        let close = Rect::from_min_size(pos2(bar.max.x - 46.0, bar.min.y), vec2(46.0, 34.0));
+        let min = Rect::from_min_size(pos2(bar.max.x - 92.0, bar.min.y), vec2(46.0, 34.0));
         for (r, is_close) in [(min, false), (close, true)] {
             let resp = ui.interact(r, ui.id().with(("winbtn", is_close)), Sense::click());
             if resp.hovered() {
@@ -406,82 +436,47 @@ impl App {
     fn nav(&mut self, ui: &mut egui::Ui, full: Rect) {
         let tr = self.tr();
         let p = ui.painter().clone();
-        // the badge and the name
-        let x = full.min.x + 28.0;
-        if let Some(logo) = &self.logo {
-            p.image(logo.id(), Rect::from_min_size(pos2(x, full.min.y + 62.0), vec2(56.0, 56.0)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
-        }
-        spaced(&p, pos2(x + 70.0, full.min.y + 80.0), Align2::LEFT_CENTER, "BLOCKTIME", head(24.0), TEXT, 2.0);
-        spaced(&p, pos2(x + 71.0, full.min.y + 104.0), Align2::LEFT_CENTER, "TREPANG2 x MINECRAFT", mono(10.0), DIM, 2.0);
+        let row = Rect::from_min_max(pos2(full.min.x, full.min.y + HEADER), pos2(full.max.x, full.min.y + TOP));
+        p.rect_filled(row, CornerRadius::ZERO, with_alpha(Color32::BLACK, 0.55));
+        p.line_segment([row.left_bottom(), row.right_bottom()], Stroke::new(1.0, with_alpha(Color32::WHITE, 0.08)));
         let items = [(Page::Play, tr.nav_play), (Page::Install, tr.nav_install), (Page::Settings, tr.nav_settings), (Page::Controls, tr.nav_controls), (Page::About, tr.nav_about)];
-        let mut y = full.min.y + 170.0;
+        let tab_w = 172.0;
         for (i, (page, label)) in items.into_iter().enumerate() {
-            let r = Rect::from_min_size(pos2(full.min.x, y), vec2(SIDE - 1.0, 46.0));
+            let r = Rect::from_min_size(pos2(row.min.x + 36.0 + i as f32 * tab_w, row.min.y), vec2(tab_w, row.height()));
             if menu_item(ui, r, i + 1, label, self.page == page).clicked() {
                 self.page = page;
             }
-            y += 52.0;
-        }
-        // language, at the bottom of the column
-        let ly = full.max.y - 54.0;
-        spaced(&p, pos2(x, ly), Align2::LEFT_CENTER, tr.language.to_uppercase().as_str(), mono(10.0), FAINT, 1.5);
-        let mut lx = x + 100.0;
-        for (code, label) in [("en", "EN"), ("ru", "RU")] {
-            let r = Rect::from_center_size(pos2(lx, ly), vec2(40.0, 24.0));
-            let resp = ui.interact(r, ui.id().with(("lang", code)), Sense::click());
-            let on = self.state.settings.language == code;
-            if on {
-                p.rect_stroke(r, CornerRadius::ZERO, Stroke::new(1.0, TEXT), StrokeKind::Inside);
-            }
-            p.text(r.center(), Align2::CENTER_CENTER, label, mono(11.0), if on || resp.hovered() { TEXT } else { DIM });
-            if resp.clicked() {
-                self.state.settings.language = code.into();
-                self.state.save();
-            }
-            lx += 48.0;
         }
     }
 
     fn page_play(&mut self, ui: &mut egui::Ui, area: Rect, t: f32) {
         let tr = self.tr();
         let p = ui.painter().clone();
-        // the operation's name
-        tag(&p, area.min + vec2(0.0, 8.0), tr.operation, DIM);
-        let tw = spaced(&p, area.min + vec2(-3.0, 52.0), Align2::LEFT_CENTER, "BLOCKTIME", head(66.0), TEXT, 6.0);
-        spaced(&p, area.min + vec2(0.0, 98.0), Align2::LEFT_CENTER, "TREPANG2  x  MINECRAFT", mono(13.0), DIM, 3.0);
-        // the drop of Minecraft: its yellow splash, small, tilted, pulsing
+        let left_w = 610.0;
+        // the operation's name, the wordmark, the splash typed out like a readout
+        tag(&p, area.min + vec2(0.0, 6.0), tr.operation, DIM);
+        let tw = wordmark(&p, area.min + vec2(0.0, 50.0), 44.0, TEXT);
+        spaced(&p, area.min + vec2(2.0, 88.0), Align2::LEFT_CENTER, "TREPANG2  x  MINECRAFT", mono(14.0), CYAN, 3.0);
         let splash = tr.splashes[self.splash % tr.splashes.len()];
-        let size = (11.0 + (t * 5.0).sin().abs() * 1.0).round();
-        let g = p.layout_no_wrap(splash.to_owned(), pixel(size), SPLASH);
-        let gs = p.layout_no_wrap(splash.to_owned(), pixel(size), Color32::from_rgb(63, 63, 21));
-        let anchor = pos2(area.min.x + (tw - g.size().x * 0.8).min(area.width() - g.size().x - 10.0), area.min.y + 18.0);
-        p.add(egui::epaint::TextShape::new(anchor + vec2(1.5, 1.5), gs, Color32::from_rgb(63, 63, 21)).with_angle(-0.12));
-        p.add(egui::epaint::TextShape::new(anchor, g, SPLASH).with_angle(-0.12));
+        let shown: String = splash.chars().take(((t * 18.0) as usize).min(splash.chars().count())).collect();
+        let cursor = if (t * 3.0).fract() < 0.5 { "_" } else { " " };
+        spaced(&p, area.min + vec2((tw + 26.0).min(left_w - 240.0), 88.0), Align2::LEFT_CENTER, &format!("// {shown}{cursor}"), mono(14.0), DIM, 1.0);
 
-        // objectives
+        // the file: what is located, installed
         let installed = self.installed_ok();
-        let obj = Rect::from_min_size(area.min + vec2(0.0, 126.0), vec2(area.width(), 196.0));
+        let obj = Rect::from_min_size(area.min + vec2(0.0, 112.0), vec2(left_w, 196.0));
         panel(&p, obj, Some(tr.h_objectives));
         let state = |ok: bool, pending: bool| if ok { tr.st_done } else if pending { tr.st_pending } else { tr.st_failed };
         let rows = [
+            (Some(self.state.game_dir.is_some()), tr.obj_game, self.state.game_dir.as_ref().map(|d| pretty(d)).unwrap_or_else(|| tr.not_found.into()), state(self.state.game_dir.is_some(), false)),
             (
-                Some(self.state.game_dir.is_some()),
-                tr.obj_game,
-                self.state.game_dir.as_ref().map(|d| pretty(d)).unwrap_or_else(|| tr.not_found.into()),
-                state(self.state.game_dir.is_some(), false),
-            ),
-            (
-                if self.launcher.is_some() { Some(true) } else { Some(false) },
+                Some(self.launcher.is_some()),
                 tr.obj_mc,
                 if self.launcher.is_some() { pretty(&self.state.mc_dir.clone().unwrap_or_default()) } else { tr.launcher_missing.into() },
                 state(self.launcher.is_some(), false),
             ),
             (
-                match installed {
-                    Some(true) => Some(true),
-                    Some(false) => Some(false),
-                    None => None,
-                },
+                installed,
                 tr.obj_mod,
                 match installed {
                     Some(true) => format!("{} - v{}", tr.mod_installed, self.state.installed.as_ref().map(|i| i.version.clone()).unwrap_or_default()),
@@ -493,33 +488,34 @@ impl App {
         ];
         let mut y = obj.min.y + 42.0;
         for (done, text, detail, st) in rows {
-            objective(&p, pos2(obj.min.x + 20.0, y), obj.width() - 40.0, done, text, &ellipsize(&detail, 92), st);
+            objective(&p, pos2(obj.min.x + 18.0, y), obj.width() - 36.0, done, text, &ellipsize(&detail, 66), st);
             y += 50.0;
         }
 
-        // READY (or DEPLOY when there is nothing installed yet)
-        let btn = Rect::from_min_size(pos2(area.min.x, obj.max.y + 26.0), vec2(300.0, 64.0));
+        // the call to action
+        let btn = Rect::from_min_size(pos2(area.min.x, obj.max.y + 22.0), vec2(320.0, 62.0));
         let playing = self.play_thread.as_ref().map(|h| !h.is_finished()).unwrap_or(false);
         if installed.is_some() {
-            if button(ui, btn, tr.play, head(30.0), Btn::Primary, installed == Some(true) && !playing && self.launcher.is_some()).clicked() {
+            if button(ui, btn, tr.play, head(28.0), Btn::Primary, installed == Some(true) && !playing && self.launcher.is_some()).clicked() {
                 self.start_play();
             }
-        } else if button(ui, btn, tr.install, head(28.0), Btn::Primary, self.state.game_dir.is_some() && !self.busy()).clicked() {
+        } else if button(ui, btn, tr.install, head(26.0), Btn::Primary, self.state.game_dir.is_some() && !self.busy()).clicked() {
             self.page = Page::Install;
             self.start_job(JobKind::Install);
         }
         if installed == Some(false) {
-            let r = Rect::from_min_size(pos2(btn.max.x + 16.0, btn.min.y + 12.0), vec2(180.0, 40.0));
-            if button(ui, r, tr.repair, head_m(17.0), Btn::Ghost, !self.busy()).clicked() {
+            let r = Rect::from_min_size(pos2(btn.max.x + 16.0, btn.min.y + 11.0), vec2(180.0, 40.0));
+            if button(ui, r, tr.repair, head_m(16.0), Btn::Ghost, !self.busy()).clicked() {
                 self.page = Page::Install;
                 self.start_job(JobKind::Install);
             }
         } else {
-            p.text(pos2(btn.max.x + 20.0, btn.center().y), Align2::LEFT_CENTER, tr.play_sub, body(15.0), DIM);
+            let g = p.layout(tr.play_sub.to_string(), body(14.5), DIM, left_w - btn.width() - 24.0);
+            p.galley(pos2(btn.max.x + 18.0, btn.center().y - g.size().y / 2.0), g, DIM);
         }
 
-        // what PLAY is doing
-        let y0 = btn.max.y + 28.0;
+        // what DEPLOY is doing
+        let y0 = btn.max.y + 26.0;
         let x0 = area.min.x;
         match &self.play.get() {
             PlayStep::Idle => {
@@ -529,14 +525,15 @@ impl App {
             }
             PlayStep::Done => {
                 p.rect_filled(Rect::from_center_size(pos2(x0 + 6.0, y0), vec2(8.0, 8.0)), CornerRadius::ZERO, GREEN);
-                p.text(pos2(x0 + 22.0, y0), Align2::LEFT_CENTER, tr.step_done, body_b(16.0), GREEN);
+                let g = p.layout(tr.step_done.to_string(), body_b(15.0), GREEN, left_w - 30.0);
+                p.galley(pos2(x0 + 22.0, y0 - 10.0), g, GREEN);
             }
             PlayStep::Failed(e) => {
                 p.rect_filled(Rect::from_center_size(pos2(x0 + 6.0, y0), vec2(8.0, 8.0)), CornerRadius::ZERO, RED);
-                p.text(pos2(x0 + 22.0, y0), Align2::LEFT_CENTER, format!("{}: {e}", tr.step_failed), body_b(16.0), RED);
+                p.text(pos2(x0 + 22.0, y0), Align2::LEFT_CENTER, format!("{}: {e}", tr.step_failed), body_b(15.0), RED);
             }
             s => {
-                spinner(&p, pos2(x0 + 8.0, y0), t, TEXT);
+                spinner(&p, pos2(x0 + 8.0, y0), t, ACCENT);
                 let text = match s {
                     PlayStep::StartingLauncher => tr.step_launcher,
                     PlayStep::WaitingForMinecraft => tr.step_wait_mc,
@@ -544,38 +541,42 @@ impl App {
                     PlayStep::StartingRon => tr.step_game,
                     _ => tr.step_wait_game,
                 };
-                p.text(pos2(x0 + 26.0, y0), Align2::LEFT_CENTER, text, body_b(16.0), TEXT);
-                p.text(pos2(x0 + 26.0, y0 + 22.0), Align2::LEFT_CENTER, tr.cancel_hint, body(14.0), DIM);
+                p.text(pos2(x0 + 26.0, y0), Align2::LEFT_CENTER, text, body_b(15.0), TEXT);
+                p.text(pos2(x0 + 26.0, y0 + 22.0), Align2::LEFT_CENTER, tr.cancel_hint, body(13.5), DIM);
             }
         }
 
-        self.loadout(&p, area, t);
+        // the right column: the Focus dial (it breathes between real time and Trepang2's bullet time), then the loadout
+        let right = Rect::from_min_max(pos2(area.min.x + left_w + 28.0, area.min.y), area.max);
+        let dial = Rect::from_min_size(right.min, vec2(right.width(), 236.0));
+        panel(&p, dial, Some(tr.h_focus));
+        let k = (t * 0.55).sin() * 0.5 + 0.5;
+        let scale = 0.35 + 0.65 * k * k;
+        scope(&p, Rect::from_min_max(dial.min + vec2(14.0, 40.0), dial.max - vec2(14.0, 14.0)), scale, t);
+        self.loadout(&p, Rect::from_min_max(pos2(right.min.x, dial.max.y + 16.0), right.max), t);
     }
 
-    /// The bottom row of the Play page: what the mod does, each with a Minecraft block.
+    /// The right column's lower part: what the mod does, each with a Minecraft block.
     fn loadout(&self, p: &egui::Painter, area: Rect, t: f32) {
         let tr = self.tr();
-        let top = area.max.y - 96.0;
-        tag(p, pos2(area.min.x, top - 16.0), tr.h_loadout, DIM);
-        let n = tr.features.len() as f32;
-        let gap = 12.0;
-        let w = (area.width() - gap * (n - 1.0)) / n;
+        panel(p, area, Some(tr.h_loadout));
+        let n = tr.features.len();
+        let row_h = (area.height() - 36.0) / n as f32;
         for (i, (head_text, text)) in tr.features.iter().enumerate() {
-            let r = Rect::from_min_size(pos2(area.min.x + i as f32 * (w + gap), top), vec2(w, 90.0));
-            p.rect_filled(r, CornerRadius::ZERO, PANEL);
-            p.rect_stroke(r, CornerRadius::ZERO, Stroke::new(1.0, LINE), StrokeKind::Inside);
-            p.rect_filled(Rect::from_min_size(r.min, vec2(w, 2.0)), CornerRadius::ZERO, with_alpha(Color32::WHITE, 0.35));
-            let block = [Block::Brick, Block::Grass, Block::Tnt][i % 3];
-            let bob = (t * 1.6 + i as f32 * 1.3).sin() * 2.0;
-            cube(p, pos2(r.min.x + 40.0, r.center().y + bob), 40.0, block, 1.0, 40 + i as u32);
-            spaced(p, pos2(r.min.x + 76.0, r.min.y + 26.0), Align2::LEFT_CENTER, head_text, head(18.0), TEXT, 2.0);
-            let g = p.layout(text.to_string(), body(14.5), DIM, r.max.x - r.min.x - 88.0);
-            p.galley(pos2(r.min.x + 76.0, r.min.y + 42.0), g, DIM);
+            let y = area.min.y + 32.0 + i as f32 * row_h;
+            let block = [Block::Grass, Block::Brick, Block::Tnt][i % 3];
+            let bob = (t * 1.6 + i as f32 * 1.3).sin() * 1.5;
+            cube(p, pos2(area.min.x + 34.0, y + row_h / 2.0 + bob), 34.0, block, 1.0, 40 + i as u32);
+            spaced(p, pos2(area.min.x + 66.0, y + row_h / 2.0 - 10.0), Align2::LEFT_CENTER, head_text, head(16.0), CYAN, 2.0);
+            p.text(pos2(area.min.x + 66.0, y + row_h / 2.0 + 10.0), Align2::LEFT_CENTER, *text, body(14.0), TEXT);
         }
     }
 
     fn page_title(p: &egui::Painter, area: Rect, title: &str) {
-        spaced(p, area.min + vec2(-2.0, 22.0), Align2::LEFT_CENTER, title, head(40.0), TEXT, 4.0);
+        for i in 0..5 {
+            p.rect_filled(Rect::from_min_size(area.min + vec2(0.0, 7.0 + i as f32 * 6.0), vec2(PX, PX)), CornerRadius::ZERO, if i == 1 { CYAN } else { ACCENT });
+        }
+        spaced(p, area.min + vec2(18.0, 22.0), Align2::LEFT_CENTER, title, head(36.0), TEXT, 4.0);
     }
 
     fn page_install(&mut self, ui: &mut egui::Ui, area: Rect, t: f32) {
@@ -708,7 +709,7 @@ impl App {
         let tr = self.tr();
         let p = ui.painter().clone();
         Self::page_title(&p, area, tr.settings_title);
-        let box_ = Rect::from_min_size(area.min + vec2(0.0, 54.0), vec2(area.width(), 300.0));
+        let box_ = Rect::from_min_size(area.min + vec2(0.0, 54.0), vec2(area.width(), 346.0));
         panel(&p, box_, Some(tr.h_game));
         let x = box_.min.x + 22.0;
         let mut y = box_.min.y + 42.0;
@@ -718,6 +719,8 @@ impl App {
         changed |= toggle(ui, pos2(x, y), box_.width() - 44.0, &mut self.state.settings.mobs_hunt_player, tr.hunt, Some(tr.hunt_hint));
         y += 60.0;
         changed |= toggle(ui, pos2(x, y), box_.width() - 44.0, &mut self.state.settings.squad_fights_mobs, tr.squad, Some(tr.squad_hint));
+        y += 60.0;
+        changed |= toggle(ui, pos2(x, y), box_.width() - 44.0, &mut self.state.settings.tnt_wrecks, tr.wreck, Some(tr.wreck_hint));
         if changed {
             self.saved_at = None;
         }
@@ -747,14 +750,19 @@ impl App {
         let tr = self.tr();
         let p = ui.painter().clone();
         Self::page_title(&p, area, tr.controls_title);
-        let box_ = Rect::from_min_size(area.min + vec2(0.0, 54.0), vec2(area.width(), 38.0 * tr.controls.len() as f32 + 44.0));
-        panel(&p, box_, Some(tr.h_keys));
-        let mut y = box_.min.y + 40.0;
-        for (key, what) in tr.controls {
-            keycap(&p, pos2(box_.min.x + 20.0, y), key);
-            p.text(pos2(box_.min.x + 130.0, y + 14.0), Align2::LEFT_CENTER, *what, body(16.0), TEXT);
-            y += 38.0;
+        let half = (area.width() - 20.0) / 2.0;
+        let rows = (tr.controls.len() + 1) / 2;
+        for (col, title) in [(0usize, tr.h_build), (1, tr.h_combat)] {
+            let box_ = Rect::from_min_size(area.min + vec2(col as f32 * (half + 20.0), 54.0), vec2(half, 36.0 * rows as f32 + 44.0));
+            panel(&p, box_, Some(title));
+            let mut y = box_.min.y + 40.0;
+            for (key, what) in tr.controls.iter().skip(col * rows).take(rows) {
+                keycap(&p, pos2(box_.min.x + 18.0, y), key);
+                p.text(pos2(box_.min.x + 118.0, y + 14.0), Align2::LEFT_CENTER, *what, body(15.5), TEXT);
+                y += 36.0;
+            }
         }
+        let box_ = Rect::from_min_size(area.min + vec2(0.0, 54.0), vec2(area.width(), 36.0 * rows as f32 + 44.0));
         // the hotbar, drawn as Minecraft draws it: the one fully-Minecraft thing here
         let hb_y = box_.max.y + 30.0;
         tag(&p, pos2(area.min.x, hb_y), tr.hotbar_title, DIM);
@@ -776,9 +784,9 @@ impl App {
         for (i, name) in tr.hotbar.iter().enumerate() {
             let col = (i / 3) as f32;
             let row = (i % 3) as f32;
-            let at = pos2(hb.min.x + col * 200.0, hb.max.y + 18.0 + row * 20.0);
+            let at = pos2(hb.max.x + 26.0 + col * 168.0, hb.min.y + 12.0 + row * 20.0);
             p.text(at, Align2::LEFT_CENTER, format!("{}", i + 1), mono(11.0), FAINT);
-            p.text(at + vec2(18.0, 0.0), Align2::LEFT_CENTER, *name, body(14.5), DIM);
+            p.text(at + vec2(16.0, 0.0), Align2::LEFT_CENTER, *name, body(13.5), DIM);
         }
     }
 
@@ -789,7 +797,7 @@ impl App {
         let text = tr.about.join(" ");
         let g = p.layout(text, body(16.0), TEXT, area.width() - 40.0);
         let a = Rect::from_min_size(area.min + vec2(0.0, 54.0), vec2(area.width(), g.size().y + 56.0));
-        panel(&p, a, Some("BLOCKTIME"));
+        panel(&p, a, Some("DEADPIXEL"));
         p.galley(a.min + vec2(20.0, 38.0), g, TEXT);
         let c = Rect::from_min_size(pos2(area.min.x, a.max.y + 18.0), vec2(area.width(), 44.0 + 24.0 * tr.credits.len() as f32));
         panel(&p, c, Some(&tr.credits_title.to_uppercase()));
@@ -932,8 +940,8 @@ fn selftest(dir: PathBuf) {
     std::fs::write(w64.join(core::GAME_EXE), b"exe").unwrap();
     std::fs::write(w64.join("dxgi.dll"), b"ORIGINAL dxgi").unwrap();
     std::fs::write(mc.join("launcher_profiles.json"), r#"{"profiles":{"x":{"name":"mine","type":"custom"}},"settings":{},"version":3}"#).unwrap();
-    std::env::set_var("BLOCKTIME_SELFTEST", "1");
-    std::env::set_var("BLOCKTIME_HOME", dir.join("home"));
+    std::env::set_var("DEADPIXEL_SELFTEST", "1");
+    std::env::set_var("DEADPIXEL_HOME", dir.join("home"));
     let mut state = State::default();
     state.game_dir = Some(ron.clone());
     state.mc_dir = Some(mc.clone());
@@ -951,9 +959,9 @@ fn selftest(dir: PathBuf) {
     check("dxgi.dll replaced", std::fs::read(w64.join("dxgi.dll")).map(|d| d.len() > 1000).unwrap_or(false), &mut out);
     check("dxgi.dll backed up", std::fs::read(dir.join("home/backup/Win64/dxgi.dll")).map(|d| d == b"ORIGINAL dxgi").unwrap_or(false), &mut out);
     let prof = std::fs::read_to_string(mc.join("launcher_profiles.json")).unwrap_or_default();
-    check("profile added, the user's profile kept", prof.contains(r#""blocktime""#) && prof.contains(r#""mine""#), &mut out);
+    check("profile added, the user's profile kept", prof.contains(r#""deadpixel""#) && prof.contains(r#""mine""#), &mut out);
     check("fabric version json", mc.join(format!("versions/{0}/{0}.json", core::FABRIC_VERSION)).is_file(), &mut out);
-    check("mods in the game dir", dir.join("home/minecraft/mods/blocktime-passthrough.jar").is_file(), &mut out);
+    check("mods in the game dir", dir.join("home/minecraft/mods/deadpixel-passthrough.jar").is_file(), &mut out);
     check("install intact", state.installed.as_ref().map(core::install_intact).unwrap_or(false), &mut out);
     // repair over an install: the backup stays the original
     let progress = Progress::default();
@@ -976,7 +984,7 @@ fn selftest(dir: PathBuf) {
     check("ReShade.ini gone", !w64.join("ReShade.ini").exists(), &mut out);
     check("game exe untouched", std::fs::read(w64.join(core::GAME_EXE)).map(|d| d == b"exe").unwrap_or(false), &mut out);
     let prof = std::fs::read_to_string(mc.join("launcher_profiles.json")).unwrap_or_default();
-    check("profile removed, the user's kept", !prof.contains(r#""blocktime""#) && prof.contains(r#""mine""#), &mut out);
+    check("profile removed, the user's kept", !prof.contains(r#""deadpixel""#) && prof.contains(r#""mine""#), &mut out);
     check("fabric version removed", !mc.join("versions").join(core::FABRIC_VERSION).exists(), &mut out);
     check("world kept", dir.join("home/minecraft/saves/passthrough/level.dat").is_file(), &mut out);
     check("mods removed", !dir.join("home/minecraft/mods").exists(), &mut out);
@@ -1038,9 +1046,13 @@ fn main() -> eframe::Result {
     if shot.is_some() {
         viewport = viewport.with_position([-6000.0, 100.0]).with_active(false).with_taskbar(false);
     }
+    if demo {
+        // the recorder captures the window wherever it is: it opens without taking the focus (someone may be working)
+        viewport = viewport.with_active(false);
+    }
     let options = eframe::NativeOptions {
         viewport: viewport
-            .with_title("Blocktime")
+            .with_title("DeadPixel")
             .with_inner_size([W, H])
             .with_resizable(false)
             .with_decorations(false)
@@ -1049,7 +1061,7 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
     eframe::run_native(
-        "Blocktime",
+        "DeadPixel",
         options,
         Box::new(move |cc| {
             let mut app = App::new(cc, page, uninstall);

@@ -28,6 +28,7 @@
 #include <array>
 #include <atomic>
 #include <climits>
+#include <chrono>
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
@@ -41,6 +42,7 @@
 
 #include <DynamicOutput/DynamicOutput.hpp>
 #include <Mod/CppUserModBase.hpp>
+#include <Unreal/AActor.hpp>
 #include <Unreal/CoreUObject/UObject/Class.hpp>
 #include <Unreal/CoreUObject/UObject/UnrealType.hpp>
 #include <Unreal/Hooks/Hooks.hpp>
@@ -460,7 +462,10 @@ public:
 	/// fn: a KismetSystemLibrary trace, e.g. "LineTraceSingle" (the Visibility channel: characters block it too),
 	/// "LineTraceSingleForObjects" / "SphereTraceSingleForObjects" (only the level: WorldStatic + WorldDynamic).
 	/// staticOnly: object traces see WorldStatic only (walls, floors, fixed furniture), not WorldDynamic (doors, props).
-	explicit LineTracer(const TCHAR *fn = STR("LineTraceSingle"), bool staticOnly = false) : m_name(fn), m_staticOnly(staticOnly)
+	/// complex: per-triangle collision instead of the simple hulls (a wall piece's simple hull reached 13 m down over
+	/// SafeHouse's desks and made a solid pillar of air, 2026-10-08); slower, exact.
+	explicit LineTracer(const TCHAR *fn = STR("LineTraceSingle"), bool staticOnly = false, bool complex = false)
+		: m_name(fn), m_staticOnly(staticOnly), m_complex(complex)
 	{
 	}
 
@@ -485,6 +490,8 @@ public:
 			*reinterpret_cast<RawByteArray *>(params + m_objectTypes) = RawByteArray{levelTypes, m_staticOnly ? 1 : 2, 2};
 		if (m_radius >= 0)
 			*reinterpret_cast<float *>(params + m_radius) = radius;
+		if (m_complex && m_traceComplex != nullptr)
+			m_traceComplex->SetPropertyValueInContainer(params, true);
 		m_ignoreSelf->SetPropertyValueInContainer(params, true);
 		UObject *ignored[4] = {};
 		int ignoredCount = 0;
@@ -505,6 +512,12 @@ public:
 	bool ok() const
 	{
 		return m_ok;
+	}
+
+	/// The last hit's surface normal (FHitResult.ImpactNormal), or up if the struct has none.
+	ue::Vec last_normal() const
+	{
+		return m_impactNormal >= 0 ? *reinterpret_cast<const ue::Vec *>(m_params + m_outHit + m_impactNormal) : ue::Vec{0.0, 0.0, 1.0};
 	}
 
 	/// The full name of the component the last trace hit (FHitResult.Component, a weak pointer), for debugging.
@@ -575,11 +588,14 @@ private:
 		m_outHit = offset(STR("OutHit"));
 		m_ignoreActors = offset(STR("ActorsToIgnore"));
 		m_ignoreSelf = CastField<FBoolProperty>(m_fn->FindProperty(FName(STR("bIgnoreSelf"), FNAME_Find)));
+		m_traceComplex = CastField<FBoolProperty>(m_fn->FindProperty(FName(STR("bTraceComplex"), FNAME_Find)));
 		m_returnValue = CastField<FBoolProperty>(m_fn->FindProperty(FName(STR("ReturnValue"), FNAME_Find)));
 		FProperty *hitProp = m_fn->FindProperty(FName(STR("OutHit"), FNAME_Find));
 		auto *hitStruct = hitProp ? static_cast<FStructProperty *>(hitProp)->GetStruct().Get() : nullptr;
 		FProperty *impact = hitStruct ? hitStruct->FindProperty(FName(STR("ImpactPoint"), FNAME_Find)) : nullptr;
 		m_impactPoint = impact ? impact->GetOffset_Internal() : -1;
+		FProperty *normal = hitStruct ? hitStruct->FindProperty(FName(STR("ImpactNormal"), FNAME_Find)) : nullptr;
+		m_impactNormal = normal ? normal->GetOffset_Internal() : -1;
 		FProperty *component = hitStruct ? hitStruct->FindProperty(FName(STR("Component"), FNAME_Find)) : nullptr;
 		m_component = component ? component->GetOffset_Internal() : -1;
 		m_hitSize = hitProp ? hitProp->GetSize() : 0;
@@ -592,13 +608,13 @@ private:
 
 	const TCHAR *m_name;
 	int32_t m_objectTypes = -1, m_radius = -1;
-	bool m_staticOnly = false;
+	bool m_staticOnly = false, m_complex = false;
 	bool m_resolved = false, m_ok = false;
 	UFunction *m_fn = nullptr;
 	UObject *m_cdo = nullptr;
 	int32_t m_context = -1, m_start = -1, m_end = -1, m_channel = -1, m_outHit = -1, m_impactPoint = -1, m_ignoreActors = -1, m_size = 0;
-	FBoolProperty *m_ignoreSelf = nullptr, *m_returnValue = nullptr;
-	int32_t m_component = -1, m_hitSize = 0;
+	FBoolProperty *m_ignoreSelf = nullptr, *m_returnValue = nullptr, *m_traceComplex = nullptr;
+	int32_t m_component = -1, m_hitSize = 0, m_impactNormal = -1;
 	alignas(16) uint8_t m_params[2048] = {};
 };
 
@@ -622,21 +638,22 @@ public:
 		compositor::unregister(g_module);
 	}
 
-	/// Mods\T2Passthrough\config.ini (written by the Blocktime installer's settings page), read once at start:
-	/// [blocktime] mc_scale=25..100, mobs_hunt_player=0|1, squad_fights_mobs=0|1.
+	/// Mods\T2Passthrough\config.ini (written by the DeadPixel installer's settings page), read once at start:
+	/// [deadpixel] mc_scale=25..100, mobs_hunt_player=0|1, squad_fights_mobs=0|1.
 	void read_config()
 	{
 		const std::wstring dir = mod_dir();
 		if (dir.empty())
 			return;
 		const std::wstring ini = dir + L"\\config.ini";
-		const int scale = int(GetPrivateProfileIntW(L"blocktime", L"mc_scale", 75, ini.c_str()));
+		const int scale = int(GetPrivateProfileIntW(L"deadpixel", L"mc_scale", 75, ini.c_str()));
 		m_mcScale = std::clamp(scale, 25, 100) / 100.0;
-		m_mobsHuntPlayer = GetPrivateProfileIntW(L"blocktime", L"mobs_hunt_player", 1, ini.c_str()) != 0;
-		m_squadFights = GetPrivateProfileIntW(L"blocktime", L"allies_fight_mobs", 1, ini.c_str()) != 0;
+		m_mobsHuntPlayer = GetPrivateProfileIntW(L"deadpixel", L"mobs_hunt_player", 1, ini.c_str()) != 0;
+		m_squadFights = GetPrivateProfileIntW(L"deadpixel", L"allies_fight_mobs", 1, ini.c_str()) != 0;
 		m_targetsAll = m_squadFights;
-		log("config: Minecraft at %d%%, mobs hunt the player %s, allies fight mobs %s", int(m_mcScale * 100.0 + 0.5),
-			m_mobsHuntPlayer ? "yes" : "no", m_squadFights ? "yes" : "no");
+		m_tntWrecks = GetPrivateProfileIntW(L"deadpixel", L"tnt_wrecks_level", 1, ini.c_str()) != 0;
+		log("config: Minecraft at %d%%, mobs hunt the player %s, allies fight mobs %s, TNT wrecks rooms %s", int(m_mcScale * 100.0 + 0.5),
+			m_mobsHuntPlayer ? "yes" : "no", m_squadFights ? "yes" : "no", m_tntWrecks ? "yes" : "no");
 	}
 
 	auto on_unreal_init() -> void override
@@ -673,6 +690,10 @@ public:
 		compositor::set_pose_lag(m_poseLag);
 		Hook::RegisterEngineTickPostCallback([this](auto &, UEngine *engine, float, bool) { tick(engine); },
 			{false, false, STR("T2Passthrough"), STR("Camera")});
+		// every actor as it starts: characters and projectiles are noted here, so nothing scans the whole object array
+		// (hundreds of thousands of objects) every few frames to find them
+		Hook::RegisterBeginPlayPostCallback([this](auto &, AActor *actor) { on_begin_play(static_cast<UObject *>(actor)); },
+			{false, true, STR("T2Passthrough"), STR("Spawns")});
 		log("ready: NumPad 0 build mode, F5 on/off, F6 test blocks, F7 before/over UI, F9 pose lag, Ctrl+F7 frame trace");
 	}
 
@@ -739,7 +760,8 @@ private:
 	int m_inGame = -1;      // last state logged
 	int m_inGameAlone = -1; // last state logged while Minecraft isn't connected
 	LineTracer m_tracer;                                           // Visibility: projectiles, what the player hits
-	LineTracer m_ground{STR("LineTraceSingleForObjects")};         // the level only (characters don't count as floor)
+	LineTracer m_ground{STR("LineTraceSingleForObjects"), false, true}; // the level only (characters don't count as floor), exact
+	LineTracer m_aim{STR("LineTraceSingle"), false, true};               // build mode: what the camera ray meets (props and people too), exact
 	// static geometry only: an open door (WorldDynamic) must not leave a permanent wall in its doorway
 	LineTracer m_room{STR("SphereTraceSingleForObjects"), true};         // is there room for a mob to stand
 	LineTracer m_edge{STR("LineTraceSingleForObjects"), true};           // a wall between two column centres
@@ -904,6 +926,7 @@ private:
 	int m_playerShots = 0, m_playerMobHits = 0;
 	bool m_mobsHuntPlayer = true; // the player has a proxy too: Minecraft's mobs come for Trepang2's player ({"op":"hunt"})
 	bool m_squadFights = true;    // the player's allies are mobs' targets and shoot back, like the enemies
+	bool m_tntWrecks = true;      // Minecraft's TNT throws Trepang2's props and knocks out thin walls (config tnt_wrecks_level)
 	uint64_t m_resyncAt = 0;
 	std::atomic<bool> m_relevel{false};
 	std::atomic<bool> m_probe{false};
@@ -1089,6 +1112,46 @@ private:
 			list_characters();
 			return;
 		}
+		if (has("goto") || has("find"))
+		{
+			// {"op":"find","n":"Bed"} lists actors whose name has n (with where they are); {"op":"goto","n":"Bed","v":i}
+			// teleports the player 1.5 m in front of the i-th of them (tests in places a level is hard to walk to)
+			const size_t at = m.find("\"n\":\"");
+			const std::string needle = at == std::string::npos ? "" : m.substr(at + 5, m.find('"', at + 5) - at - 5);
+			if (needle.empty() || !player_alive())
+				return;
+			static UClass *actorClass = script_class(STR("/Script/Engine.Actor"));
+			const StringType want(needle.begin(), needle.end());
+			std::vector<std::pair<UObject *, ue::Vec>> found;
+			UObjectGlobals::ForEachUObject([&](UObject *object, int32_t, int32_t) {
+				if (object == nullptr || found.size() >= 40 || actorClass == nullptr || !object->IsA(actorClass) ||
+					object->GetName().find(STR("Default__")) != StringType::npos || object->GetName().find(want) == StringType::npos)
+					return LoopAction::Continue;
+				UObject **root = m_rootComponent.in(object);
+				ue::Vec *loc = root && *root ? m_relativeLocation.in(*root) : nullptr;
+				if (loc != nullptr && Ref(object).get() != nullptr)
+					found.emplace_back(object, *loc);
+				return LoopAction::Continue;
+			});
+			if (has("find"))
+			{
+				for (size_t i = 0; i < found.size(); ++i)
+					log("find [%d] %ls at UE (%.0f, %.0f, %.0f)", int(i), found[i].first->GetName().c_str(), found[i].second.x, found[i].second.y, found[i].second.z);
+				log("find '%s': %d", needle.c_str(), int(found.size()));
+				return;
+			}
+			const int i = std::clamp(v, 0, std::max(0, int(found.size()) - 1));
+			if (found.empty())
+			{
+				log("goto '%s': none", needle.c_str());
+				return;
+			}
+			const ue::Vec t = found[size_t(i)].second;
+			ue::Call tp(STR("/Script/Engine.Actor:K2_TeleportTo"));
+			tp.set(STR("DestLocation"), ue::Vec{t.x - 150.0, t.y, t.z + 100.0}).set(STR("DestRotation"), ue::Rot{0.0, 0.0, 0.0}).run(m_lastPawn);
+			log("goto [%d] %ls: %s", i, found[size_t(i)].first->GetName().c_str(), tp.get<bool>(STR("ReturnValue")) ? "ok" : "refused");
+			return;
+		}
 		if (has("pose"))
 		{
 			// the camera right now (scripts turn the player and want to know where it looks)
@@ -1160,7 +1223,13 @@ private:
 		if (has("cloak"))
 		{
 			if (player_alive())
+			{
+				// a test: the cloak meter full first (it may be spent)
+				static Member<float> dur{STR("InvisDuration")}, durMax{STR("InvisDurationMax")};
+				if (float *d = dur.in(m_lastPawn), *dm = durMax.in(m_lastPawn); d && dm)
+					*d = *dm;
 				log("cloak toggle: %d", call_named(m_lastPawn, STR("BPInputToggleInvis")));
+			}
 			return;
 		}
 		if (has("throw"))
@@ -1179,11 +1248,72 @@ private:
 			m_moveUntil = m_frame + uint64_t(v > 0 ? v : 30);
 			return;
 		}
+		if (has("turn"))
+		{
+			// {"op":"turn","yaw":deg/s,"pitch":deg/s,"v":frames}: a smooth turn at these rates, applied every frame (a mouse
+			// sweep), for v frames; v 0 stops it
+			const std::vector<double> yaw = json_doubles("{\"y\":[" + json_number(m, "yaw") + "]}", "y");
+			const std::vector<double> pitch = json_doubles("{\"p\":[" + json_number(m, "pitch") + "]}", "p");
+			m_turnYaw = yaw.empty() ? 0.0 : yaw[0];
+			m_turnPitch = pitch.empty() ? 0.0 : pitch[0];
+			m_turnUntil = v > 0 ? m_frame + uint64_t(v) : 0;
+			return;
+		}
+		if (has("press"))
+		{
+			// {"op":"press","k":"jump|crouch|sprint|zoom","v":frames}: the button held for v frames (default 8), through the
+			// player's own input functions (a slide is sprint held + crouch)
+			const size_t at = m.find("\"k\":\"");
+			const std::string key = at == std::string::npos ? "" : m.substr(at + 5, m.find('"', at + 5) - at - 5);
+			const wchar_t *down = key == "jump" ? STR("BPInputJumpPressed") : key == "crouch" ? STR("BPInputCrouchPressed")
+				: key == "zoom" ? STR("BPInputHoldZoomPressed") : nullptr;
+			const wchar_t *up = key == "jump" ? STR("BPInputJumpReleased") : key == "crouch" ? STR("BPInputCrouchReleased")
+				: key == "zoom" ? STR("BPInputHoldZoomReleased") : key == "sprint" ? STR("BPInputSprintReleased") : nullptr;
+			if (!player_alive() || up == nullptr)
+				return;
+			if (key == "sprint")
+			{
+				ue::Call sprint(STR("/Script/CPPFPS.BasePlayer:BPInputSprintPressed"));
+				sprint.set(STR("bToggleSprintMode"), false).run(m_lastPawn);
+			}
+			else
+				call_named(m_lastPawn, down);
+			m_releases.push_back({m_frame + uint64_t(v > 0 ? v : 8), up});
+			return;
+		}
+		if (has("tap"))
+		{
+			// {"op":"tap","k":"reload|next|flashlight|zoomtoggle"}: a one-shot button
+			const size_t at = m.find("\"k\":\"");
+			const std::string key = at == std::string::npos ? "" : m.substr(at + 5, m.find('"', at + 5) - at - 5);
+			const wchar_t *fn = key == "reload" ? STR("BPInputReload") : key == "next" ? STR("BPInputNextWeapon")
+				: key == "flashlight" ? STR("BPInputToggleFlashlight") : key == "zoomtoggle" ? STR("BPInputToggleZoom") : nullptr;
+			if (player_alive() && fn != nullptr)
+				log("tap %s: %d", key.c_str(), call_named(m_lastPawn, fn));
+			return;
+		}
 		if (has("fire"))
 		{
 			// the trigger held for v frames (default 6): a real shot of the player's gun, as the mouse button does
 			if (player_alive() && call_named(m_lastPawn, STR("BPInputFirePressed")) >= 0)
 				m_fireReleaseAt = m_frame + uint64_t(v > 0 ? v : 6);
+			return;
+		}
+		if (has("mobdist"))
+		{
+			double best = 1e9;
+			for (const Mob &mob : m_mobs)
+				best = std::min(best, std::hypot(double(mob.at.x - m_camLoc.x), double(mob.at.y - m_camLoc.y)));
+			log("mobs: %d, nearest %.1f m, cloaked %d", int(m_mobs.size()), best / 100.0, int(m_cloaked));
+			return;
+		}
+		if (has("blastprobe"))
+		{
+			// at what the camera looks at (up to 30 m)
+			ue::Vec hit{};
+			const ue::Vec end{m_camLoc.x + m_camFwd.x * 3000.0, m_camLoc.y + m_camFwd.y * 3000.0, m_camLoc.z + m_camFwd.z * 3000.0};
+			if (player_alive() && m_tracer.trace(m_lastPawn, m_camLoc, end, hit))
+				blast_probe(hit, v > 0 ? float(v) : 3.0f);
 			return;
 		}
 		if (has("nade"))
@@ -1233,7 +1363,7 @@ private:
 				}
 				ue::Call thr(STR("/Script/CPPFPS.BaseCharacter:ThrowGrenade"));
 				thr.set(STR("OverrideProjectile"), cls)
-					.set(STR("OverrideVelocity"), ue::Vec{m_camFwd.x * 1500.0, m_camFwd.y * 1500.0, m_camFwd.z * 1500.0 + 300.0})
+					.set(STR("OverrideVelocity"), ue::Vec{m_camFwd.x * 2100.0, m_camFwd.y * 2100.0, m_camFwd.z * 2100.0 + 350.0})
 					.run(m_lastPawn);
 				log("nade: %ls, thrown %s", cls ? cls->GetFullName().c_str() : STR("(no class)"), thr.get<bool>(STR("ReturnValue")) ? "yes" : "no");
 			}
@@ -1563,11 +1693,46 @@ private:
 		return out;
 	}
 
+	// Actors noted at their BeginPlay (the hook above): the level's characters, and explosive projectiles not yet tracked.
+	// Until the hook has fired once (it needs UE4SS to have found AActor::BeginPlay) the old scans are used instead.
+	bool m_beginPlayHooked = false;
+	std::vector<Ref> m_liveCharacters;
+	std::vector<Ref> m_newProjectiles;
+
+	void on_begin_play(UObject *actor)
+	{
+		if (actor == nullptr)
+			return;
+		m_beginPlayHooked = true;
+		static UClass *character = script_class(STR("/Script/Engine.Character"));
+		static UClass *projectile = script_class(STR("/Script/CPPFPS.BaseProjectile"));
+		if (character != nullptr && actor->IsA(character))
+			m_liveCharacters.emplace_back(actor);
+		else if (projectile != nullptr && actor->IsA(projectile) && explosive_class(actor->GetClassPrivate()->GetName()))
+			m_newProjectiles.emplace_back(actor);
+	}
+
 	std::vector<UObject *> characters()
 	{
+		std::vector<UObject *> out;
+		if (m_beginPlayHooked)
+		{
+			// the live ones; the gone ones (destroyed, level change) drop out
+			for (size_t i = 0; i < m_liveCharacters.size();)
+				if (UObject *c = m_liveCharacters[i].get())
+				{
+					out.push_back(c);
+					++i;
+				}
+				else
+				{
+					m_liveCharacters[i] = m_liveCharacters.back();
+					m_liveCharacters.pop_back();
+				}
+			return out;
+		}
 		std::vector<UObject *> all;
 		UObjectGlobals::FindAllOf(STR("Character"), all);
-		std::vector<UObject *> out;
 		for (UObject *c : all)
 			if (c != nullptr && c->GetName().find(STR("Default__")) == StringType::npos)
 				out.push_back(c);
@@ -1638,6 +1803,8 @@ private:
 			if (cloaked != m_cloaked)
 			{
 				m_cloaked = cloaked;
+				if (cloaked)
+					m_ws.send("{\"t\":\"cloak\"}"); // at once: the list below just leaves the player out
 				log(cloaked ? "player cloaked: Minecraft's mobs lose track" : "player visible again");
 			}
 		}
@@ -1854,7 +2021,7 @@ private:
 
 	/// The player's view turned by (yaw, pitch) degrees from where it looks now (tests turn without Trepang2's input).
 	/// With `absolute`, dpitch is the pitch itself (degrees, up positive).
-	void look_by(double dyaw, double dpitch, bool absolute = false)
+	void look_by(double dyaw, double dpitch, bool absolute = false, bool quiet = false)
 	{
 		if (m_pc == nullptr)
 			return;
@@ -1864,7 +2031,8 @@ private:
 		const double pitch = std::clamp(absolute ? dpitch : now + dpitch, -89.0, 89.0);
 		ue::Call set(STR("/Script/Engine.Controller:SetControlRotation"));
 		set.set(STR("NewRotation"), ue::Rot{pitch, yaw, 0.0}).run(m_pc);
-		log("look: yaw %.1f pitch %.1f", yaw, pitch);
+		if (!quiet)
+			log("look: yaw %.1f pitch %.1f", yaw, pitch);
 	}
 
 	/// Trepang2's first-person arms (ABasePlayer.Mesh1P and Mesh1P2, the second hand when dual wielding, with the
@@ -2034,6 +2202,216 @@ private:
 		if (player == nullptr || !m_lastPawn->IsA(player))
 			return false;
 		return alive(m_lastPawn);
+	}
+
+	/// The level's components overlapping a sphere (UE cm), the player's pawn and our block actor left out
+	/// (KismetSystemLibrary.SphereOverlapComponents, every object type: static, dynamic, physics, destructible).
+	std::vector<UObject *> overlap_components(const ue::Vec &center, float radius)
+	{
+		std::vector<UObject *> out;
+		if (m_lastPawn == nullptr)
+			return out;
+		static uint8_t types[6] = {0, 1, 2, 3, 4, 5};
+		struct
+		{
+			uint8_t *data;
+			int32_t num, max;
+		} objectTypes{types, 6, 6};
+		UObject *ignore[2] = {m_lastPawn, live_block_actor()};
+		const ue::PtrArray ignoreActors{ignore, ignore[1] ? 2 : 1, 2};
+		ue::Call call(STR("/Script/Engine.KismetSystemLibrary:SphereOverlapComponents"));
+		call.set(STR("WorldContextObject"), m_lastPawn)
+			.set(STR("SpherePos"), center)
+			.set(STR("SphereRadius"), radius)
+			.set(STR("ObjectTypes"), objectTypes)
+			.set(STR("ActorsToIgnore"), ignoreActors)
+			.run();
+		int32_t size = 0;
+		const uint8_t *arr = call.bytes(STR("OutComponents"), size);
+		if (arr == nullptr || !call.get<bool>(STR("ReturnValue")))
+			return out;
+		const auto *list = reinterpret_cast<const ue::PtrArray *>(arr);
+		for (int32_t i = 0; i < list->num && i < 512; ++i)
+			if (UObject *c = Ref(list->data[i]).get())
+				out.push_back(c);
+		return out; // (the array's memory is the engine's: a few bytes left behind per call)
+	}
+
+	struct Bounds
+	{
+		ue::Vec origin, extent;
+		float radius = 0.0f;
+	};
+
+	static Bounds bounds_of(UObject *component)
+	{
+		ue::Call call(STR("/Script/Engine.KismetSystemLibrary:GetComponentBounds"));
+		call.set(STR("Component"), component).run();
+		Bounds b;
+		b.origin = call.get<ue::Vec>(STR("Origin"));
+		b.extent = call.get<ue::Vec>(STR("BoxExtent"));
+		b.radius = call.get<float>(STR("SphereRadius"));
+		return b;
+	}
+
+	/// What a blast at `center` would reach in Trepang2's level, logged ({"op":"blastprobe","v":radius m}): for working
+	/// out what Minecraft's TNT may break there.
+	void blast_probe(const ue::Vec &center, float radiusM)
+	{
+		static Member<uint8_t> mobility{STR("Mobility")};
+		const std::vector<UObject *> found = overlap_components(center, radiusM * 100.0f);
+		log("blast probe at UE (%.0f, %.0f, %.0f), %.1f m: %d components", center.x, center.y, center.z, radiusM, int(found.size()));
+		for (size_t i = 0; i < found.size() && i < 60; ++i)
+		{
+			UObject *c = found[i];
+			ue::Call owner(STR("/Script/Engine.ActorComponent:GetOwner"));
+			owner.run(c);
+			UObject *actor = owner.get<UObject *>(STR("ReturnValue"));
+			ue::Call phys(STR("/Script/Engine.PrimitiveComponent:IsSimulatingPhysics"));
+			phys.run(c);
+			const Bounds b = bounds_of(c);
+			uint8_t *mob = mobility.in(c);
+			log("  %ls / %ls (%ls): mobility %d, physics %d, radius %.0f, extent (%.0f %.0f %.0f), centre z %+.0f", actor ? actor->GetClassPrivate()->GetName().c_str() : STR("-"),
+				c->GetClassPrivate()->GetName().c_str(), c->GetName().c_str(), mob ? int(*mob) : -1, int(phys.get<bool>(STR("ReturnValue"))), b.radius,
+				b.extent.x, b.extent.y, b.extent.z, b.origin.z - center.z);
+		}
+	}
+
+	/// A loaded Blueprint class by its name (e.g. "FragGrenadeProjectile_C"), cached; null until loaded.
+	static UObject *bp_class(const TCHAR *name)
+	{
+		static std::unordered_map<StringType, Ref> cache;
+		if (auto it = cache.find(name); it != cache.end())
+			if (UObject *c = it->second.get())
+				return c;
+		UObject *found = nullptr;
+		UObjectGlobals::ForEachUObject([&](UObject *object, int32_t, int32_t) {
+			if (object != nullptr && object->GetName() == name && object->GetClassPrivate() != nullptr &&
+				object->GetClassPrivate()->GetName() == STR("BlueprintGeneratedClass"))
+			{
+				found = object;
+				return LoopAction::Break;
+			}
+			return LoopAction::Continue;
+		});
+		if (found != nullptr)
+			cache[name] = Ref(found);
+		return found;
+	}
+
+	/// Pillars, beams and frames hold the level up (in looks), doors, gates and mission blockers hold its logic: never
+	/// knocked out, however thin (a StaticMeshActor named BlockMissionDoor4 went on 2026-10-08).
+	static bool is_structural(const StringType &name)
+	{
+		for (const wchar_t *word : {STR("Pillar"), STR("Column"), STR("Beam"), STR("Support"), STR("Frame"), STR("Girder"), STR("Post"), STR("Door"),
+				 STR("Gate"), STR("Hatch"), STR("Shutter"), STR("Block"), STR("Elevator"), STR("Lift"), STR("Vent"), STR("Stair"), STR("Rail")})
+			if (name.find(word) != StringType::npos)
+				return true;
+		return false;
+	}
+
+	/// A wall panel may go only if there is floor on its far side (the hole leads into a room, not out of the level).
+	bool breach_leads_somewhere(const Bounds &b, const ue::Vec &center)
+	{
+		const bool alongX = b.extent.x < b.extent.y; // thin along x: its normal is x
+		const double side = alongX ? (b.origin.x > center.x ? 1.0 : -1.0) : (b.origin.y > center.y ? 1.0 : -1.0);
+		const double px = alongX ? b.origin.x + side * 150.0 : center.x, py = alongX ? center.y : b.origin.y + side * 150.0;
+		const double feet = b.origin.z - b.extent.z;
+		ue::Vec hit{};
+		return m_ground.trace(m_lastPawn, ue::Vec{px, py, feet + 120.0}, ue::Vec{px, py, feet - 120.0}, hit, live_block_actor()) && std::abs(hit.z - feet) < 60.0;
+	}
+
+	/// Minecraft's TNT, creepers and fireworks in Trepang2's level, a little: loose small things (books, bottles,
+	/// chairs, crates: Static props under 1.5 m) become physics bodies and fly off; one thin wall panel right at the
+	/// blast is knocked out (a breach hole); a scorch mark (Trepang2's own grenade decal) stays on the floor. Floors,
+	/// ceilings, doors, lights and anything big are never touched: no falling out of the level, no broken scripting.
+	int m_breaches = 0; // per level
+	void tnt_world_damage(const ue::Vec &center, float radiusM)
+	{
+		crash_guard::Scope scope("tnt_world_damage");
+		if (!player_alive())
+			return;
+		static UClass *baseProp = script_class(STR("/Script/CPPFPS.BaseProp"));
+		static Member<uint8_t> mobility{STR("Mobility")};
+		const float reach = std::clamp(radiusM, 1.0f, 6.0f) * 100.0f * 1.3f;
+		int flung = 0, breached = 0;
+		// furniture first (30 cm .. 1.5 m across, nearest first), then the small stuff: papers must not use up the limit
+		std::vector<std::pair<float, UObject *>> order;
+		for (UObject *c : overlap_components(center, reach))
+		{
+			const StringType cc = c->GetClassPrivate()->GetName();
+			if (cc != STR("StaticMeshComponent") && cc != STR("DamageableStaticMeshComponent"))
+				continue;
+			const Bounds b = bounds_of(c);
+			const float d = std::hypot(b.origin.x - center.x, b.origin.y - center.y);
+			order.emplace_back((b.radius >= 30.0f && b.radius < 150.0f ? 0.0f : 10000.0f) + d, c);
+		}
+		std::sort(order.begin(), order.end(), [](auto &a, auto &b) { return a.first < b.first; });
+		for (auto &[rank, c] : order)
+		{
+			if (flung >= 20 && breached >= 1)
+				break;
+			ue::Call owner(STR("/Script/Engine.ActorComponent:GetOwner"));
+			owner.run(c);
+			UObject *actor = owner.get<UObject *>(STR("ReturnValue"));
+			if (actor == nullptr)
+				continue;
+			const StringType ac = actor->GetClassPrivate()->GetName();
+			static UClass *section = script_class(STR("/Script/CPPFPS.BaseLevelBuilder_Section"));
+			const bool wallKit = section && actor->IsA(section); // the combat sims' modular walls
+			const bool plain = ac == STR("StaticMeshActor") || (baseProp && actor->IsA(baseProp));
+			if (!plain && !wallKit)
+				continue; // doors, lights, triggers, pickups, characters, Blueprint set pieces: their logic stays intact
+			const Bounds b = bounds_of(c);
+			const float dz = b.origin.z - center.z;
+			const float thin = std::min(b.extent.x, b.extent.y);
+			const float dx = b.origin.x - center.x, dy = b.origin.y - center.y;
+			const float dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+			const bool flat = b.extent.z < 18.0f && b.radius > 60.0f; // a floor or ceiling plate
+			if (flat)
+				continue;
+			if (plain && b.radius < 150.0f && flung < 20)
+			{
+				// loose: movable, a physics body, thrown away from the blast
+				ue::Call mob(STR("/Script/Engine.SceneComponent:SetMobility"));
+				mob.set(STR("NewMobility"), uint8_t(2)).run(c);
+				ue::Call profile(STR("/Script/Engine.PrimitiveComponent:SetCollisionProfileName"));
+				profile.name(STR("InCollisionProfileName"), STR("PhysicsActor")).set(STR("bUpdateOverlaps"), true).run(c);
+				ue::Call sim(STR("/Script/Engine.PrimitiveComponent:SetSimulatePhysics"));
+				sim.set(STR("bSimulate"), true).run(c);
+				ue::Call push(STR("/Script/Engine.PrimitiveComponent:AddRadialImpulse"));
+				push.set(STR("Origin"), ue::Vec{center.x, center.y, center.z - 40.0}).set(STR("Radius"), reach * 1.2f).set(STR("Strength"), 1400.0f)
+					.set(STR("Falloff"), uint8_t(0)).set(STR("bVelChange"), true).run(c);
+				++flung;
+			}
+			else if (breached < 1 && m_breaches < 12 && thin < 30.0f && std::max(b.extent.x, b.extent.y) > 60.0f && b.extent.z > 80.0f &&
+				b.radius < 260.0f && !is_structural(actor->GetName()) && dist < 180.0f + b.radius * 0.6f &&
+				b.origin.z - b.extent.z < center.z + 30.0f && b.origin.z - b.extent.z > center.z - 160.0f && breach_leads_somewhere(b, center))
+			{
+				// a thin wall panel at the blast: knocked out (hidden, no collision)
+				ue::Call vis(STR("/Script/Engine.SceneComponent:SetVisibility"));
+				vis.set(STR("bNewVisibility"), false).set(STR("bPropagateToChildren"), true).run(c);
+				ue::Call col(STR("/Script/Engine.PrimitiveComponent:SetCollisionEnabled"));
+				col.set(STR("NewType"), uint8_t(0)).run(c);
+				++breached;
+				++m_breaches;
+				log("TNT breached a wall panel: %ls (%.0f x %.0f x %.0f cm)", actor->GetName().c_str(), b.extent.x * 2, b.extent.y * 2, b.extent.z * 2);
+			}
+		}
+		// the scorch mark: Trepang2's grenade decal, projected down onto the floor under the blast
+		if (UObject *frag = bp_class(STR("FragGrenadeProjectile_C")))
+		{
+			static Member<UObject *> decal{STR("GrenadeDecal")};
+			UObject *cdo = static_cast<UClass *>(frag)->GetClassDefaultObject().Get();
+			if (UObject **mat = cdo ? decal.in(cdo) : nullptr; mat && *mat)
+			{
+				ue::Call spawn(STR("/Script/Engine.GameplayStatics:SpawnDecalAtLocation"));
+				spawn.set(STR("WorldContextObject"), m_lastPawn).set(STR("DecalMaterial"), *mat)
+					.set(STR("DecalSize"), ue::Vec{60.0, radiusM * 90.0, radiusM * 90.0}).set(STR("Location"), center)
+					.set(STR("Rotation"), ue::Rot{-90.0, 0.0, 0.0}).set(STR("LifeSpan"), 0.0f).run();
+			}
+		}
+		log("TNT in Trepang2's level: %d things thrown, %d wall panel(s) knocked out", flung, breached);
 	}
 
 	/// Radial damage in Trepang2 (UE coordinates), sparing the player's pawn. True if it damaged anything.
@@ -2232,6 +2610,8 @@ private:
 		const double radius = std::atof(r + 4);
 		const ue::Vec origin = to_ue(pos[0], pos[1], pos[2]);
 		const bool damaged = radial_damage(origin, float(60.0 * radius), float(radius * 150.0), Damage::trap);
+		if (m_tntWrecks)
+			tnt_world_damage(origin, float(radius));
 		log("explosion r=%.1f at UE (%.0f, %.0f, %.0f): radial damage %s", radius, origin.x, origin.y, origin.z,
 			damaged ? "hit something" : "hit nothing");
 	}
@@ -2286,19 +2666,24 @@ private:
 	void probe_column(UObject *pawn, int x, int z, double zTop, double zBottom, std::string &columns)
 	{
 		UObject *ignore = live_block_actor();
-		const double cx = uex(x + 0.5), cy = uey(z + 0.5);
 		const int64_t key = column_key(x, z);
-		double from = zTop;
-		double surfaceAbove = NAN; // the last surface found: a solid right under it is that thing's body
-		int surfaceTop = 0;
-		UObject *volumes[3] = {};
-		int volumeCount = 0;
 		auto add = [&](int bottom, int top) {
 			char entry[64];
 			std::snprintf(entry, sizeof(entry), "%s%d,%d,%d,%d", columns.empty() ? "" : ",", x, z, bottom, top);
 			columns += entry;
 		};
-		for (int found = 0, tries = 0; found < kMaxFloors && tries < 16 && from > zBottom; ++tries)
+		// the column is probed at its centre; a centre that sits inside something thin and tall (a monitor stand, a lamp,
+		// a chair leg) can resolve to nothing at all, and that one column became a hole in the floor that TNT and mobs
+		// fell through (SafeHouse desks, 2026-10-08): then the probe is tried again a quarter cell off the centre
+		auto probe_at = [&](double ox, double oy) -> int {
+		const double cx = uex(x + 0.5) + ox, cy = uey(z + 0.5) + oy;
+		double from = zTop;
+		double surfaceAbove = NAN; // the last surface found: a solid right under it is that thing's body
+		int surfaceTop = 0;
+		UObject *volumes[3] = {};
+		int volumeCount = 0;
+		int found = 0;
+		for (int tries = 0; found < kMaxFloors && tries < 16 && from > zBottom; ++tries)
 		{
 			ue::Vec hit{};
 			const bool any = m_ground.trace(pawn, ue::Vec{cx, cy, from}, ue::Vec{cx, cy, zBottom}, hit, ignore, 0.0f, volumes, volumeCount);
@@ -2320,9 +2705,10 @@ private:
 					log("  inside a solid from z %.0f: it ends at z %.0f", from, exit);
 				if (std::isnan(exit))
 				{
-					if (!std::isnan(surfaceAbove))
-						break; // under a surface and solid for 8 m: the ground's mass, nothing below it matters
-					from -= 800.0; // started inside a building's mass at the top: look further down
+					// solid for 8 m under a surface: the ground's mass - or a thick wall of the storey above (SafeHouse's
+					// office desks sit under SM_Wall_Full of the floor above: the probe used to stop here and the whole desk
+					// area had no floor, 2026-10-08). Look further down either way; true ground finds nothing more.
+					from -= 800.0;
 					continue;
 				}
 				if (!std::isnan(surfaceAbove))
@@ -2383,6 +2769,12 @@ private:
 			surfaceTop = top;
 			from = hit.z - 2.0; // just below this surface: in the thing it belongs to, or over the storey under it
 		}
+		return found;
+		};
+		if (probe_at(0.0, 0.0) == 0)
+			for (const auto [ox, oy] : {std::pair<double, double>{25.0, 25.0}, {-25.0, -25.0}, {25.0, -25.0}, {-25.0, 25.0}})
+				if (probe_at(ox, oy) > 0)
+					break;
 	}
 
 	double probe_ms() const
@@ -2816,7 +3208,7 @@ private:
 		if (alone != m_standalone)
 		{
 			m_standalone = alone;
-			log(alone ? "single player: Blocktime on" : "other players in the session: Blocktime stays off (single player only)");
+			log(alone ? "single player: DeadPixel on" : "other players in the session: DeadPixel stays off (single player only)");
 		}
 		return alone;
 	}
@@ -2824,6 +3216,16 @@ private:
 	uint64_t m_fireReleaseAt = 0;
 	uint64_t m_moveUntil = 0;
 	float m_moveF = 0.0f, m_moveR = 0.0f;
+	// test input: a smooth turn (degrees per real second) and buttons released after some frames
+	uint64_t m_turnUntil = 0;
+	double m_turnYaw = 0.0, m_turnPitch = 0.0;
+	std::chrono::steady_clock::time_point m_turnLast{};
+	struct Release
+	{
+		uint64_t at;
+		const wchar_t *fn;
+	};
+	std::vector<Release> m_releases;
 	std::atomic<bool> m_anyKey{false};
 	bool m_cloaked = false;
 
@@ -2857,7 +3259,33 @@ private:
 		crash_guard::Scope scope("tick_explosives");
 		static Member<float> radiusMember{STR("GrenadeDamageRadius")};
 		std::vector<UObject *> all;
-		UObjectGlobals::FindAllOf(STR("BaseProjectile"), all);
+		if (m_beginPlayHooked)
+		{
+			// the ones that began play since the last scan join (a real spawn: its end is a real explosion, however soon),
+			// the tracked ones are followed
+			for (const Ref &r : m_newProjectiles)
+				if (UObject *o = r.get())
+				{
+					UObject **root = m_rootComponent.in(o);
+					ue::Vec *at = root && *root ? m_relativeLocation.in(*root) : nullptr;
+					if (at == nullptr)
+						continue;
+					float *rad = radiusMember.in(o);
+					m_explosives.insert_or_assign(o->GetInternalIndex(), Explosive{Ref(o), *at, rad && *rad > 0.0f ? *rad : 500.0f, m_frame, ~0ull});
+					log("explosive in flight: %ls", o->GetClassPrivate()->GetName().c_str());
+				}
+			m_newProjectiles.clear();
+			for (auto &[index, e] : m_explosives)
+				if (UObject *o = e.ref.get())
+				{
+					UObject **root = m_rootComponent.in(o);
+					if (ue::Vec *at = root && *root ? m_relativeLocation.in(*root) : nullptr)
+						e.at = *at;
+					e.seen = m_frame;
+				}
+		}
+		else
+			UObjectGlobals::FindAllOf(STR("BaseProjectile"), all);
 		for (UObject *o : all)
 		{
 			// destroyed ones wait in GUObjectArray for the garbage collector: found again every scan, they "exploded"
@@ -2897,8 +3325,11 @@ private:
 				continue;
 			}
 			const ue::Vec &a = it->second.at;
-			const double power = std::clamp(it->second.radius / 100.0 * 0.7, 2.0, 6.0);
-			send("{\"t\":\"hostblast\",\"pos\":[%.3f,%.3f,%.3f],\"p\":%.2f}", mcx(a.x), mcy(a.z), mcz(a.y), power);
+			// a frag's 6 m radius -> 5.1, a bit stronger than TNT (4): a grenade at a wall should go through it
+			const double power = std::clamp(it->second.radius / 100.0 * 0.85, 2.5, 6.5);
+			// 0.7 blocks up: a grenade goes off lying on the floor, and a blast centred inside the floor's barrier blocks
+			// (blast-proof) broke nothing at all (2026-10-08, the brick wall take)
+			send("{\"t\":\"hostblast\",\"pos\":[%.3f,%.3f,%.3f],\"p\":%.2f}", mcx(a.x), mcy(a.z) + 0.7, mcz(a.y), power);
 			log("Trepang2 explosion at UE (%.0f, %.0f, %.0f), radius %.1f m -> Minecraft blast power %.1f", a.x, a.y, a.z, it->second.radius / 100.0, power);
 			it = m_explosives.erase(it);
 		}
@@ -3167,6 +3598,7 @@ private:
 			m_pedHandle.clear();
 			m_projectiles.clear();
 			m_explosives.clear();
+			m_breaches = 0;
 			m_mobs.clear();
 			m_weapon = Ref();
 		}
@@ -3179,6 +3611,14 @@ private:
 		}
 		if ((!m_haveOffset || placeTest) && pawnNow != nullptr)
 		{
+			// the floor itself, under the pawn, rather than the capsule's bottom: a capsule hovering over a grate or a
+			// step put every floor of the map off by that much (Horde_Nuke: blocks sunk 0.4 m into the floor)
+			{
+				ue::Vec hit{};
+				if (m_ground.trace(pawnNow, ue::Vec{loc.x, loc.y, feetZ + 60.0}, ue::Vec{loc.x, loc.y, feetZ - 150.0}, hit, live_block_actor()) &&
+					std::abs(hit.z - feetZ) < 80.0)
+					feetZ = hit.z;
+			}
 			m_yOffset = kFeetY - feetZ / 100.0;
 			m_haveOffset = true;
 			m_sampled.clear();
@@ -3243,8 +3683,32 @@ private:
 		// have their own cameras far from the level (the main menu's is ~250 m under it), and Steve would be
 		// teleported there and fall out of the world. With no pose for 2 s Minecraft lets go and Steve hovers.
 		if (inGame)
-			send("{\"t\":\"cam\",\"f\":%llu,\"p\":[%.4f,%.4f,%.4f],\"r\":[%.3f,%.3f,%.3f],\"fov\":%.3f,\"fp\":true,\"pl\":[%.4f,%.4f,%.4f],\"h\":%.3f}",
-				static_cast<unsigned long long>(m_frame), x, y, z, yaw, pitch, roll, vfov, px, py, pz, yaw);
+		{
+			// build mode: where the camera ray meets Trepang2's own geometry (within Minecraft's reach), as the point and
+			// normal for Minecraft's block placement - its own pick against the barrier grid landed blocks in the air
+			// (false walls, desks as whole blocks, floors rounded to the grid)
+			char aim[160] = "";
+			ue::Vec hit{};
+			if (g_build && pawnNow != nullptr)
+			{
+				std::snprintf(aim, sizeof(aim), ",\"aim\":[]"); // build mode, nothing within reach: Minecraft places nothing
+				// not the player's own gun (a separate actor hanging in front of the camera: it caught the ray at 0.5 m)
+				UObject *more[2] = {nullptr, nullptr};
+				ue::Call current(STR("/Script/CPPFPS.BaseCharacter:GetCurrentWeapon"));
+				current.run(pawnNow);
+				more[0] = Ref(current.get<UObject *>(STR("ReturnValue"))).get();
+				if (m_aim.trace(pawnNow, m_camLoc, ue::Vec{m_camLoc.x + m_camFwd.x * 520.0, m_camLoc.y + m_camFwd.y * 520.0, m_camLoc.z + m_camFwd.z * 520.0}, hit,
+						live_block_actor(), 0.0f, more, more[0] ? 1 : 0))
+				{
+					const ue::Vec n = m_aim.last_normal();
+					std::snprintf(aim, sizeof(aim), ",\"aim\":[%.4f,%.4f,%.4f,%.3f,%.3f,%.3f]", mcx(hit.x), mcy(hit.z), mcz(hit.y), n.x, n.z, n.y);
+					if (m_frame % 120 == 0)
+						log("build aim: %.2f m, %ls", std::hypot(hit.x - m_camLoc.x, hit.y - m_camLoc.y, hit.z - m_camLoc.z) / 100.0, m_aim.last_component().c_str());
+				}
+			}
+			send("{\"t\":\"cam\",\"f\":%llu,\"p\":[%.4f,%.4f,%.4f],\"r\":[%.3f,%.3f,%.3f],\"fov\":%.3f,\"fp\":true,\"pl\":[%.4f,%.4f,%.4f],\"h\":%.3f%s}",
+				static_cast<unsigned long long>(m_frame), x, y, z, yaw, pitch, roll, vfov, px, py, pz, yaw, aim);
+		}
 
 		if (inGame && pawnNow != nullptr)
 		{
@@ -3275,6 +3739,29 @@ private:
 				right.set(STR("Val"), m_moveR).run(pawnNow);
 			}
 		}
+		{
+			const auto now = std::chrono::steady_clock::now();
+			if (m_turnUntil != 0 && player_alive())
+			{
+				if (m_frame >= m_turnUntil)
+					m_turnUntil = 0;
+				else if (m_turnLast.time_since_epoch().count() != 0)
+				{
+					const double dt = std::min(std::chrono::duration<double>(now - m_turnLast).count(), 0.1);
+					look_by(m_turnYaw * dt, m_turnPitch * dt, false, true);
+				}
+			}
+			m_turnLast = now;
+		}
+		for (size_t i = 0; i < m_releases.size();)
+			if (m_frame >= m_releases[i].at)
+			{
+				if (player_alive())
+					call_named(pawnNow, m_releases[i].fn);
+				m_releases.erase(m_releases.begin() + i);
+			}
+			else
+				++i;
 		if (m_fireReleaseAt != 0 && m_frame >= m_fireReleaseAt)
 		{
 			m_fireReleaseAt = 0;
@@ -3361,13 +3848,25 @@ private:
 			bx = int(std::floor(x + fx * ahead + rx * right));
 			bz = int(std::floor(z + fz * ahead + rz * right));
 		};
-		int bx, bz;
+		// each block on the floor under it, not at the player's feet height: floors step up and down (a sunken library
+		// floor put the test pillars 1 m in the air, 2026-10-08). The surface rounded to the nearest block boundary.
+		auto floor_y = [&](int bx, int bz) {
+			ue::Vec hit{};
+			const double top = (feetY + 1.8 - m_yOffset) * 100.0, bottom = (feetY - 4.0 - m_yOffset) * 100.0;
+			if (m_lastPawn != nullptr && m_ground.trace(m_lastPawn, ue::Vec{uex(bx + 0.5), uey(bz + 0.5), top}, ue::Vec{uex(bx + 0.5), uey(bz + 0.5), bottom}, hit, live_block_actor()))
+				return int(std::floor(mcy(hit.z) + 0.5));
+			return fy;
+		};
+		int bx, bz, by;
 		at(3.0, 0.0, bx, bz);
-		send("{\"t\":\"cmd\",\"c\":\"setblock %d %d %d minecraft:gold_block\"}", bx, fy, bz);
+		by = floor_y(bx, bz);
+		send("{\"t\":\"cmd\",\"c\":\"setblock %d %d %d minecraft:gold_block\"}", bx, by, bz);
 		at(6.0, 1.5, bx, bz);
-		send("{\"t\":\"cmd\",\"c\":\"fill %d %d %d %d %d %d minecraft:diamond_block\"}", bx, fy, bz, bx, fy + 2, bz);
+		by = floor_y(bx, bz);
+		send("{\"t\":\"cmd\",\"c\":\"fill %d %d %d %d %d %d minecraft:diamond_block\"}", bx, by, bz, bx, by + 2, bz);
 		at(2.0, -2.0, bx, bz);
-		send("{\"t\":\"cmd\",\"c\":\"setblock %d %d %d minecraft:emerald_block\"}", bx, fy, bz);
+		by = floor_y(bx, bz);
+		send("{\"t\":\"cmd\",\"c\":\"setblock %d %d %d minecraft:emerald_block\"}", bx, by, bz);
 		if (m_testFar)
 		{
 			// occlusion test: 3-high iron pillars every 4 m from 8 to 32 m ahead, 3 m left and 3 m right
@@ -3375,7 +3874,8 @@ private:
 				for (double side : {-3.0, 3.0})
 				{
 					at(double(d), side, bx, bz);
-					send("{\"t\":\"cmd\",\"c\":\"fill %d %d %d %d %d %d minecraft:iron_block\"}", bx, fy, bz, bx, fy + 2, bz);
+					by = floor_y(bx, bz);
+					send("{\"t\":\"cmd\",\"c\":\"fill %d %d %d %d %d %d minecraft:iron_block\"}", bx, by, bz, bx, by + 2, bz);
 				}
 		}
 		log("test blocks placed around (%.1f, %d, %.1f)%s", x, fy, z, m_testFar ? " + far pillars" : "");

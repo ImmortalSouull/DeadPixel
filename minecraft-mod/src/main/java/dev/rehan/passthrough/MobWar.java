@@ -89,6 +89,16 @@ public final class MobWar {
 		pedsNanos = System.nanoTime();
 	}
 
+	private static volatile boolean playerGone;
+
+	/**
+	 * The host's player just cloaked: its proxy (handle 0) goes now, not after the usual few missing lists, and every
+	 * mob that was after it stops where it is (its path led to where the player stood: it used to walk on through).
+	 */
+	public static void playerCloaked() {
+		playerGone = true;
+	}
+
 	/** `byPlayer`: the host's player shot it (knocked back away from the camera), else one of its people. */
 	public static void damage(final int id, final double amount, final boolean byPlayer) {
 		damage.add(new double[] {id, amount, byPlayer ? 1 : 0, 0, 0, 0});
@@ -151,6 +161,22 @@ public final class MobWar {
 	}
 
 	private static void syncProxies(final ServerLevel level) {
+		if (playerGone) {
+			playerGone = false;
+			Villager v = proxies.remove(0);
+			if (v != null) {
+				for (Mob mob : level.getEntitiesOfClass(Mob.class, v.getBoundingBox().inflate(48.0), m -> m.getTarget() == v)) {
+					mob.setTarget(null);
+					mob.getNavigation().stop();
+					mob.setDeltaMovement(mob.getDeltaMovement().multiply(0.0, 1.0, 0.0));
+				}
+
+				handleOf.remove(v.getId());
+				missingTicks.remove(0);
+				v.discard();
+			}
+		}
+
 		if (!proxies.isEmpty() && System.nanoTime() - pedsNanos > 1_500_000_000L) {
 			clearProxies(); // the host stopped sending: nobody to hunt
 			return;
@@ -348,22 +374,31 @@ public final class MobWar {
 			int spawned = 0, feet = 0, head = 0, floor = 0;
 			BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos();
 			for (int i = 0; i + 2 < spots.length && spawned < count; i += 3) {
-				p.set(spots[i], spots[i + 1], spots[i + 2]);
-				if (!level.getBlockState(p).isAir()) {
-					feet++;
+				// the host names the storey's floor height; on rubble and steps the barriers sit a block higher or lower,
+				// so the first standing room within a few blocks of it is taken
+				int y = -1;
+				for (int dy : new int[]{0, 1, -1, 2, 3}) {
+					p.set(spots[i], spots[i + 1] + dy, spots[i + 2]);
+					if (level.getBlockState(p).isAir() && level.getBlockState(p.above()).isAir() && !level.getBlockState(p.below()).isAir()) {
+						y = spots[i + 1] + dy;
+						break;
+					}
+				}
+
+				if (y < 0) {
+					p.set(spots[i], spots[i + 1], spots[i + 2]);
+					if (!level.getBlockState(p).isAir()) {
+						feet++;
+					} else if (!level.getBlockState(p.above()).isAir()) {
+						head++;
+					} else {
+						floor++;
+					}
+
 					continue;
 				}
 
-				if (!level.getBlockState(p.above()).isAir()) {
-					head++;
-					continue;
-				}
-
-				if (level.getBlockState(p.below()).isAir()) {
-					floor++;
-					continue;
-				}
-
+				p.set(spots[i], y, spots[i + 2]);
 				if (type.get().spawn(level, p.immutable(), EntitySpawnReason.COMMAND) instanceof Mob mob) {
 					mob.setPersistenceRequired();
 					spawned++;

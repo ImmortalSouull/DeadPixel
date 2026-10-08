@@ -1,0 +1,10 @@
+{"lead": 0.3, "tail": 0.3, "steps": [
+  {"op": ["god", "1"]}, {"pitch": 0}, {"pose": 1}, {"clear": 10}, {"wait": 0.6},
+  {"ahead": [3, 0, "setblock {ix} {iy1} {iz} minecraft:stone"]}, {"wait": 0.8}, {"shot": "lab/shots/build7.png"},
+  {"op": ["build"]}, {"wait": 0.8}, {"key": "0x38"}, {"wait": 0.5},
+  {"op": ["--raw", "{\"t\":\"key\",\"k\":\"use\",\"down\":true}"]}, {"wait": 0.3}, {"op": ["--raw", "{\"t\":\"key\",\"k\":\"use\",\"down\":false}"]},
+  {"wait": 1.0}, {"shot": "lab/shots/build8.png"},
+  {"op": ["--raw", "{\"t\":\"key\",\"k\":\"attack\",\"down\":true}"]}, {"wait": 0.3}, {"op": ["--raw", "{\"t\":\"key\",\"k\":\"attack\",\"down\":false}"]},
+  {"wait": 1.0}, {"shot": "lab/shots/build9.png"},
+  {"op": ["build"]}, {"wait": 0.5}
+]}

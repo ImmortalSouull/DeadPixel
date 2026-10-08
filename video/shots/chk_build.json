@@ -1,0 +1,8 @@
+{"lead": 0.3, "tail": 0.3, "steps": [
+  {"op": ["god", "1"]}, {"yaw": [90, 3, 300]}, {"pitch": -22}, {"pose": 1}, {"clear": 12}, {"wait": 0.8},
+  {"shot": "lab/shots/build0.png"},
+  {"mark": "build on"}, {"op": ["build"]}, {"wait": 0.8}, {"key": "0x38"}, {"wait": 0.4}, {"shot": "lab/shots/build1.png"},
+  {"mouse": "right"}, {"wait": 0.6}, {"mouse": "right"}, {"wait": 0.6}, {"shot": "lab/shots/build2.png"},
+  {"mouse": "left"}, {"wait": 1.5}, {"shot": "lab/shots/build3.png"},
+  {"op": ["build"]}, {"wait": 0.6}, {"shot": "lab/shots/build4.png"}, {"yaw": [-90, 3, 300]}
+]}

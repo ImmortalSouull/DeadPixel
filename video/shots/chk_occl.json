@@ -1,0 +1,11 @@
+{"lead": 0.2, "tail": 0.2, "steps": [
+  {"op": ["god", "1"]}, {"yaw": [270, 6, 600]}, {"pitch": -20}, {"pose": 1}, {"clear": 14}, {"wait": 0.5},
+  {"ahead": [5, -1, "fill {ix} {iy} {iz} {ix} {iy2} {iz} minecraft:diamond_block"]},
+  {"ahead": [6, 1, "fill {ix} {iy} {iz} {ix} {iy2} {iz} minecraft:diamond_block"]},
+  {"ahead": [4, 0, "fill {ix} {iy} {iz} {ix} {iy1} {iz} minecraft:gold_block"]},
+  {"wait": 1.2}, {"shot": "lab/shots/oc_a0.png"}, {"op": ["debug", "3"]}, {"wait": 0.4}, {"shot": "lab/shots/oc_a3.png"}, {"op": ["debug", "0"]},
+  {"pitch": -8}, {"wait": 0.5}, {"shot": "lab/shots/oc_b0.png"}, {"op": ["debug", "3"]}, {"wait": 0.4}, {"shot": "lab/shots/oc_b3.png"}, {"op": ["debug", "0"]},
+  {"yaw": [-25, 3, 300]}, {"wait": 0.5}, {"shot": "lab/shots/oc_c0.png"}, {"op": ["debug", "3"]}, {"wait": 0.4}, {"shot": "lab/shots/oc_c3.png"}, {"op": ["debug", "0"]},
+  {"yaw": [50, 3, 300]}, {"wait": 0.5}, {"shot": "lab/shots/oc_d0.png"}, {"op": ["debug", "3"]}, {"wait": 0.4}, {"shot": "lab/shots/oc_d3.png"}, {"op": ["debug", "0"]},
+  {"yaw": [-25, 3, 300]}, {"yaw": [-270, 6, 600]}
+]}

@@ -1,6 +1,6 @@
-"""Art for Blocktime, Trepang2 first with a drop of Minecraft: the app icon is a black badge fading to crimson (Focus),
-Trepang2's crosshair arcs (white Focus meter, red Cloak meter), white ticks and a small pixel grass block in its centre.
-Writes assets/blocktime.ico, icon_256.png, icon_64.png + .rgba (window icon), logo_128.rgba (the UI's badge) and
+"""Art for DeadPixel: the app icon is a dark monitor seen up close - a steel bezel, the screen's 16 x 16 pixel structure,
+one pixel stuck on signal red with its glow, and Trepang2's reticle closed on it.
+Writes assets/deadpixel.ico, icon_256.png, icon_64.png + .rgba (window icon), logo_128.rgba (the UI's badge) and
 profile_icon.txt (the Minecraft Launcher profile's icon, a data URI).
 Run: uv run --with pillow python installer/make_art.py
 """
@@ -8,10 +8,15 @@ import base64
 import pathlib
 import random
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 HERE = pathlib.Path(__file__).resolve().parent / "assets"
 rnd = random.Random(7)
+
+RED = (255, 43, 58, 255)
+BEZEL = (58, 70, 80, 255)
+BEZEL_DARK = (28, 34, 40, 255)
+SCREEN = (8, 11, 14, 255)
 
 
 def tex_grass_top():
@@ -61,45 +66,72 @@ def pixel_cube(size=32):
 
 
 def badge(size=1024):
-    """The icon at 1024 px (scaled down with antialiasing later)."""
+    """The icon at 1024 px: the bezel, the screen with its pixel structure, the stuck pixel's glow, the reticle."""
     k = size / 256.0
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    # the badge: dark, near-square, a thin light rim
-    r = int(46 * k)
+    r = int(44 * k)
     box = (int(8 * k), int(8 * k), size - int(8 * k), size - int(8 * k))
-    grad = Image.new("RGBA", (size, size))
-    gd = ImageDraw.Draw(grad)
-    for y in range(size):
-        t = y / size
-        c = (int(10 + 70 * t * t), int(8 + 4 * t), int(10 + 6 * t), 255)
-        gd.line([(0, y), (size, y)], fill=c)
+    # the bezel: steel, a lighter top edge
     mask = Image.new("L", (size, size), 0)
     ImageDraw.Draw(mask).rounded_rectangle(box, r, fill=255)
-    img.paste(grad, (0, 0), mask)
-    d.rounded_rectangle(box, r, outline=(255, 255, 255, 46), width=int(3 * k))
-    # Trepang2's crosshair: two meters around it, Focus (white, left) and Cloak (red, right)
-    c = size // 2
-    R, wdt = int(84 * k), int(12 * k)
-    white = (240, 240, 242, 255)
-    d.arc((c - R, c - R, c + R, c + R), 112, 248, fill=white, width=wdt)
-    d.arc((c - R, c - R, c + R, c + R), 292, 428, fill=(220, 40, 44, 255), width=wdt)
-    t0, t1 = int(98 * k), int(116 * k)
-    tw = int(7 * k)
-    d.rectangle((c - tw // 2, c - t1, c + tw // 2, c - t0), fill=white)
-    d.rectangle((c - tw // 2, c + t0, c + tw // 2, c + t1), fill=white)
-    return img, c
+    bezel = Image.new("RGBA", (size, size), BEZEL)
+    bd = ImageDraw.Draw(bezel)
+    for y in range(size):
+        f = 1.0 - 0.45 * y / size
+        bd.line([(0, y), (size, y)], fill=tuple(int(c * f) for c in BEZEL[:3]) + (255,))
+    img.paste(bezel, (0, 0), mask)
+    # the screen, inset
+    inset = int(26 * k)
+    sr = int(26 * k)
+    screen_box = (box[0] + inset, box[1] + inset, box[2] - inset, box[3] - inset)
+    d.rounded_rectangle(screen_box, sr, fill=SCREEN)
+    d.rounded_rectangle(screen_box, sr, outline=BEZEL_DARK, width=int(3 * k))
+    # the pixel structure: a 16 x 16 grid of cells, each a little lighter than the gap
+    sx0, sy0, sx1, sy1 = screen_box
+    cells = 16
+    cw = (sx1 - sx0) / cells
+    grid = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(grid)
+    gap = max(1, int(cw * 0.14))
+    for j in range(cells):
+        for i in range(cells):
+            x0 = sx0 + i * cw
+            y0 = sy0 + j * cw
+            n = rnd.random()
+            tone = 14 + int(6 * n)
+            gd.rectangle((x0 + gap, y0 + gap, x0 + cw - gap, y0 + cw - gap), fill=(tone, tone + 4, tone + 8, 255))
+    smask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(smask).rounded_rectangle(screen_box, sr, fill=255)
+    img.paste(grid, (0, 0), smask)
+    # the stuck pixel: one cell (a little right of centre, a little up) lit red, its glow bleeding into the neighbours
+    ci, cj = 9, 6
+    px0 = sx0 + ci * cw
+    py0 = sy0 + cj * cw
+    glow = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    ImageDraw.Draw(glow).rectangle((px0 - cw * 1.2, py0 - cw * 1.2, px0 + cw * 2.2, py0 + cw * 2.2), fill=(255, 43, 58, 170))
+    glow = glow.filter(ImageFilter.GaussianBlur(cw * 0.9))
+    glow_masked = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    glow_masked.paste(glow, (0, 0), smask)
+    img.alpha_composite(glow_masked)
+    d = ImageDraw.Draw(img)
+    d.rectangle((px0 + gap, py0 + gap, px0 + cw - gap, py0 + cw - gap), fill=RED)
+    # Trepang2's reticle on it: four ticks with a gap in the middle, white
+    cx, cy = px0 + cw / 2, py0 + cw / 2
+    inner, outer, w = cw * 1.1, cw * 3.0, max(2, int(5 * k))
+    white = (236, 242, 246, 255)
+    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+        d.line([(cx + dx * inner, cy + dy * inner), (cx + dx * outer, cy + dy * outer)], fill=white, width=w)
+    # a thin frame of the reticle's corners, further out
+    far, arm = cw * 4.6, cw * 1.0
+    for sx, sy in ((1, 1), (-1, 1), (1, -1), (-1, -1)):
+        d.line([(cx + sx * far, cy + sy * far), (cx + sx * (far - arm), cy + sy * far)], fill=white, width=max(1, int(3 * k)))
+        d.line([(cx + sx * far, cy + sy * far), (cx + sx * far, cy + sy * (far - arm))], fill=white, width=max(1, int(3 * k)))
+    return img
 
 
 def compose(size):
-    big, c = badge(1024)
-    img = big.resize((size, size), Image.LANCZOS)
-    # the pixel block goes in at its final size with hard edges (nearest), centred in the reticle
-    cube_px = max(8, round(size * 0.40))
-    cube = pixel_cube(32).resize((cube_px, cube_px), Image.NEAREST)
-    cc = round(c / 1024 * size)
-    img.alpha_composite(cube, (size // 2 - cube_px // 2, cc - cube_px // 2))
-    return img
+    return badge(1024).resize((size, size), Image.LANCZOS)
 
 
 def main():
@@ -110,7 +142,7 @@ def main():
     imgs[64].save(HERE / "icon_64.png")
     (HERE / "icon_64.rgba").write_bytes(imgs[64].tobytes())
     (HERE / "logo_128.rgba").write_bytes(imgs[128].tobytes())
-    imgs[256].save(HERE / "blocktime.ico", sizes=[(s, s) for s in sizes], append_images=[imgs[s] for s in sizes[:-1]])
+    imgs[256].save(HERE / "deadpixel.ico", sizes=[(s, s) for s in sizes], append_images=[imgs[s] for s in sizes[:-1]])
     (HERE / "profile_icon.txt").write_text("data:image/png;base64," + base64.b64encode((HERE / "icon_64.png").read_bytes()).decode())
     # the grass block alone, for the UI's small Minecraft touches
     (HERE / "cube_32.rgba").write_bytes(pixel_cube(32).tobytes())

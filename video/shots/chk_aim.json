@@ -1,0 +1,8 @@
+{"lead": 0.2, "tail": 0.2, "steps": [
+  {"op": ["god", "1"]}, {"yaw": [180, 4, 400]}, {"pitch": -14}, {"pose": 1}, {"clear": 12}, {"wait": 0.6},
+  {"op": ["build"]}, {"wait": 0.8}, {"key": "0x38"}, {"wait": 0.4},
+  {"mark": "desk"}, {"mouse": "right"}, {"wait": 0.8}, {"shot": "lab/shots/aim1.png"},
+  {"pitch": 2}, {"wait": 0.4}, {"mark": "wall"}, {"mouse": "right"}, {"wait": 0.8}, {"shot": "lab/shots/aim2.png"},
+  {"yaw": [-60, 3, 300]}, {"pitch": -8}, {"wait": 0.4}, {"mark": "chair"}, {"mouse": "right"}, {"wait": 0.8}, {"shot": "lab/shots/aim3.png"},
+  {"op": ["build"]}, {"wait": 0.4}, {"yaw": [-120, 4, 400]}
+]}

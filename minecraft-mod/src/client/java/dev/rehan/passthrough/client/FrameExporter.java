@@ -22,9 +22,12 @@ import org.joml.Vector4f;
  *   256 + 128 * i: slot i
  *     +0 long seq (odd while being written)   +8 long Minecraft frame   +16 long host frame
  *     +24 int width   +28 int height   +32 float near   +36 float far   +40 float vertical fov (degrees)
- *     +44 int flags: 1 = depth in [0, 1] (zZeroToOne), 2 = rows bottom-up, 4 = reversed Z (1 = near, 0 = far/empty)
+ *     +44 int flags: 1 = depth in [0, 1] (zZeroToOne), 2 = rows bottom-up, 4 = reversed Z (1 = near, 0 = far/empty),
+ *                    8 = the overlay layer is empty (not written: the host keeps a blank one), 16 = the world layer is empty
  *     +48 double camera x, +56 y, +64 z   +72 float yaw   +76 pitch   +80 roll   +84 int first person
  *     +88 long capture time (System.nanoTime)   +96 long publish time
+ *     +104 int x0, +108 y0, +112 x1, +116 y1: the pixel box (inclusive, rows as stored) holding every world pixel with
+ *          alpha > 0 (x1 < x0: none), so the host searches no further than that
  * slot i data at 4096 + i * stride, each layer width * height * 4 bytes:
  *   world colour RGBA8 (premultiplied alpha), world depth float32, overlay RGBA8 (hand + HUD, premultiplied alpha)
  * </pre>
@@ -65,6 +68,9 @@ public final class FrameExporter {
 	private static long frameCounter;
 	private static long publishCounter;
 	private static Capture current;
+	/** Frames to keep copying the overlay after it was last seen with content (the emptiness check samples pixels). */
+	private static int overlayHold;
+	private static final int[] box = new int[4];
 
 	private FrameExporter() {
 	}
@@ -227,9 +233,21 @@ public final class FrameExporter {
 			VarHandle.fullFence();
 			long base = HEADER + STRIDE * slot;
 			long n = (long)c.width * c.height * 4;
-			copy(c.color, m, base, n);
+			boolean worldEmpty = copyWorld(c.color, m, base, c.width, c.height);
 			copy(c.depth, m, base + n, n);
-			copy(c.overlay, m, base + 2 * n, n);
+			// the overlay (hand, HUD, screens) is empty most of the time: not copied then (a third of the traffic)
+			boolean overlayEmpty = overlayEmpty(c.overlay, c.width, c.height);
+			if (!overlayEmpty) {
+				overlayHold = 30;
+			} else if (overlayHold > 0) {
+				overlayHold--;
+				overlayEmpty = false;
+			}
+
+			if (!overlayEmpty) {
+				copy(c.overlay, m, base + 2 * n, n);
+			}
+
 			HostState.Pose p = c.pose;
 			m.set(LONG, desc + 8, c.frame);
 			m.set(LONG, desc + 16, p.hostFrame());
@@ -238,7 +256,11 @@ public final class FrameExporter {
 			m.set(FLOAT, desc + 32, NEAR);
 			m.set(FLOAT, desc + 36, c.far);
 			m.set(FLOAT, desc + 40, p.fov());
-			m.set(INT, desc + 44, (RenderSystem.getDevice().getDeviceInfo().isZZeroToOne() ? 1 : 0) | 2 | 4);
+			m.set(INT, desc + 44, (RenderSystem.getDevice().getDeviceInfo().isZZeroToOne() ? 1 : 0) | 2 | 4 | (overlayEmpty ? 8 : 0) | (worldEmpty ? 16 : 0));
+			m.set(INT, desc + 104, box[0]);
+			m.set(INT, desc + 108, box[1]);
+			m.set(INT, desc + 112, box[2]);
+			m.set(INT, desc + 116, box[3]);
 			m.set(DOUBLE, desc + 48, p.x());
 			m.set(DOUBLE, desc + 56, p.y());
 			m.set(DOUBLE, desc + 64, p.z());
@@ -258,6 +280,72 @@ public final class FrameExporter {
 		} finally {
 			c.busy = false;
 		}
+	}
+
+	/**
+	 * Whether the overlay has nothing in it: its alpha sampled every 8th pixel of every 4th row (anything at least 8 px
+	 * wide and 4 px tall is seen; the hold above covers the rest).
+	 */
+	private static boolean overlayEmpty(final GpuBuffer buffer, final int w, final int h) {
+		try (GpuBufferSlice.MappedView view = buffer.map(true, false)) {
+			MemorySegment px = MemorySegment.ofBuffer(view.data());
+			for (int y = 0; y < h; y += 4) {
+				long row = (long)y * w * 4;
+				for (int x = 0; x < w; x += 8) {
+					if ((px.get(INT, row + (long)x * 4) & 0xFF000000) != 0) {
+						return false;
+					}
+				}
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Copies the world layer and finds the box of its drawn pixels (alpha > 0) exactly, two pixels per long read: the
+	 * host searches Minecraft's frame only inside it. Returns whether nothing was drawn at all.
+	 */
+	private static boolean copyWorld(final GpuBuffer buffer, final MemorySegment dst, final long offset, final int w, final int h) {
+		int x0 = Integer.MAX_VALUE, y0 = Integer.MAX_VALUE, x1 = -1, y1 = -1;
+		try (GpuBufferSlice.MappedView view = buffer.map(true, false)) {
+			MemorySegment px = MemorySegment.ofBuffer(view.data());
+			MemorySegment.copy(px, 0L, dst, offset, (long)w * h * 4);
+			int pairs = w / 2; // pixel pairs per row (w is even for every size Minecraft renders at)
+			for (int y = 0; y < h; y++) {
+				long row = (long)y * w * 4;
+				int first = -1;
+				for (int i = 0; i < pairs; i++) {
+					if ((px.get(LONG, row + (long)i * 8) & 0xFF000000FF000000L) != 0L) {
+						first = i;
+						break;
+					}
+				}
+
+				if (first < 0) {
+					continue;
+				}
+
+				int last = first;
+				for (int i = pairs - 1; i > first; i--) {
+					if ((px.get(LONG, row + (long)i * 8) & 0xFF000000FF000000L) != 0L) {
+						last = i;
+						break;
+					}
+				}
+
+				x0 = Math.min(x0, first * 2);
+				x1 = Math.max(x1, last * 2 + 1);
+				y0 = Math.min(y0, y);
+				y1 = y;
+			}
+		}
+
+		box[0] = x0;
+		box[1] = y0;
+		box[2] = x1;
+		box[3] = y1;
+		return x1 < 0;
 	}
 
 	private static void copy(final GpuBuffer buffer, final MemorySegment dst, final long offset, final long n) {

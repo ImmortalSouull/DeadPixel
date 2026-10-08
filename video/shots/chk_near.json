@@ -1,0 +1,11 @@
+{"lead": 0.3, "tail": 0.3, "steps": [
+  {"op": ["god", "1"]}, {"pitch": -3}, {"pose": 1}, {"clear": 10}, {"wait": 1.0},
+  {"ahead": [3, -2, "fill {ix} {iy} {iz} {ix} {iy3} {iz} minecraft:bricks"]},
+  {"ahead": [3, -1, "fill {ix} {iy} {iz} {ix} {iy3} {iz} minecraft:glowstone"]},
+  {"ahead": [3, 0, "fill {ix} {iy} {iz} {ix} {iy3} {iz} minecraft:oak_planks"]},
+  {"ahead": [3, 1, "fill {ix} {iy} {iz} {ix} {iy3} {iz} minecraft:iron_block"]},
+  {"ahead": [3, 2, "fill {ix} {iy} {iz} {ix} {iy3} {iz} minecraft:bricks"]},
+  {"wait": 1.0},
+  {"ahead": [0.7, 0, "summon minecraft:zombie {x} {y} {z} {{NoAI:1b,Rotation:[180f,0f]}}", 0]},
+  {"wait": 1.5}, {"mark": "near"}
+]}

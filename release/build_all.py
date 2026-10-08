@@ -1,4 +1,4 @@
-"""Everything for a Blocktime release, in order, stopping at the first failure:
+"""Everything for a DeadPixel release, in order, stopping at the first failure:
 
   python release/build_all.py
 
@@ -29,14 +29,14 @@ def main():
     step("payload", [sys.executable, str(ROOT / "installer" / "make_payload.py")])
     step("installer", ["cargo", "build", "--release"], cwd=ROOT / "installer")
     with tempfile.TemporaryDirectory() as tmp:
-        step("self-test", [str(ROOT / "installer" / "target" / "release" / "Blocktime.exe"), "--selftest", tmp])
+        step("self-test", [str(ROOT / "installer" / "target" / "release" / "DeadPixel.exe"), "--selftest", tmp])
         report = (Path(tmp) / "selftest.txt").read_text()
         print(report)
         if "ALL PASSED" not in report:
             sys.exit("FAILED: self-test")
     step("release files", [sys.executable, str(ROOT / "release" / "make_release.py")])
     dist = ROOT / "dist"
-    files = [str(p) for p in dist.glob("Blocktime-*/Blocktime.exe")] + [str(p) for p in dist.glob("*.zip")]
+    files = [str(p) for p in dist.glob("DeadPixel-*/DeadPixel.exe")] + [str(p) for p in dist.glob("*.zip")]
     r = subprocess.run([sys.executable, str(ROOT / "release" / "scan_paths.py"), *files], capture_output=True, text=True)
     print(r.stdout)
     if "clean" not in r.stdout:

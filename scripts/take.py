@@ -16,6 +16,7 @@ Shot list: {"lead": 1.0, "tail": 1.5, "steps": [...]} where a step is one of
   {"yaw": [degrees, steps, ms]}              a smooth turn of the view (host op look), no focus needed
   {"pitch": degrees}                         the view's pitch, absolute
   {"move": [forward, right, frames]}         walk (host op move)
+  {"near": [metres, seconds]}               wait until the nearest Minecraft mob is that close (host op mobdist)
 Shot lists that use only ops, yaw, pitch, move, fire, ahead and waits never take the focus (someone may be working).
 """
 import ctypes
@@ -112,6 +113,19 @@ def run_steps(steps, drive, t0):
             op_raw({"t": "gta", "op": "move", "f": f, "r": r, "v": frames})
         elif "mark" in step:
             print(f"  {time.time() - t0:6.2f}s  {step['mark']}", flush=True)
+        elif "near" in step:
+            # wait until the nearest Minecraft mob is closer than d metres (host op mobdist), at most s seconds
+            import re
+            d, limit = step["near"]
+            end = time.time() + limit
+            while time.time() < end:
+                subprocess.run([sys.executable, str(ROOT / "scripts" / "op.py"), "mobdist"], capture_output=True)
+                time.sleep(0.15)
+                line = next((l for l in reversed(HISTORY.read_text(errors="replace").splitlines()[-60:]) if "nearest" in l), "")
+                m = re.search(r"nearest (\d+(?:\.\d+)?) m", line)
+                if m and float(m[1]) < d:
+                    print(f"  {time.time() - t0:6.2f}s  mob at {m[1]} m", flush=True)
+                    break
 
 
 def main(shots, out):

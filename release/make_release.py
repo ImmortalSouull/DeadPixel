@@ -1,10 +1,10 @@
-"""Builds Blocktime's release files into dist/ from the current builds (run after make_payload.py + cargo build):
+"""Builds DeadPixel's release files into dist/ from the current builds (run after make_payload.py + cargo build):
 
   python release/make_release.py
 
-  dist/Blocktime-<v>/                 Blocktime.exe + README.md, CHANGELOG.md, LICENSE, THIRD_PARTY_NOTICES.md
-  dist/Blocktime-<v>.zip              the same, zipped (the main download)
-  dist/Blocktime-<v>-manual.zip       the mod laid out as it installs, for people who don't run installers:
+  dist/DeadPixel-<v>/                 DeadPixel.exe + README.md, CHANGELOG.md, LICENSE, THIRD_PARTY_NOTICES.md
+  dist/DeadPixel-<v>.zip              the same, zipped (the main download)
+  dist/DeadPixel-<v>-manual.zip       the mod laid out as it installs, for people who don't run installers:
                                         CPPFPS/Binaries/Win64/..., Minecraft/mods/..., Minecraft/versions/...
 """
 import pathlib
@@ -16,13 +16,13 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 REL = ROOT / "release"
 DIST = ROOT / "dist"
 VERSION = re.search(r'^version = "([^"]+)"', (ROOT / "installer" / "Cargo.toml").read_text(), re.M)[1]
-EXE = ROOT / "installer" / "target" / "release" / "Blocktime.exe"
+EXE = ROOT / "installer" / "target" / "release" / "DeadPixel.exe"
 PAYLOAD = ROOT / "installer" / "build" / "payload.zip"
 
 
 def notices() -> str:
     parts = ["# Third-party notices\n",
-             "Blocktime ships or downloads these components; each keeps its own license.\n"]
+             "DeadPixel ships or downloads these components; each keeps its own license.\n"]
     sections = [
         ("UE4SS (RE-UE4SS)", "MIT", (ROOT / "lab" / "payload" / "ue4ss" / "LICENSE").read_text(encoding="utf-8", errors="replace")),
         ("ReShade", "BSD 3-Clause", (REL / "reshade-LICENSE.md").read_text(encoding="utf-8", errors="replace")),
@@ -33,14 +33,14 @@ def notices() -> str:
     ]
     for name, lic, text in sections:
         parts.append(f"\n## {name} — {lic}\n\n```\n{text.strip()}\n```\n")
-    for font in ("Oswald", "RobotoCondensed", "JetBrainsMono", "PressStart2P"):
+    for font in ("ChakraPetch", "ShareTechMono", "PressStart2P", "RussoOne", "Play", "PTMono"):
         text = (ROOT / "installer" / "assets" / f"OFL-{font}.txt").read_text(encoding="utf-8", errors="replace")
         parts.append(f"\n## {font} font — SIL Open Font License 1.1\n\n```\n{text.strip()}\n```\n")
     return "".join(parts)
 
 
 def main():
-    out = DIST / f"Blocktime-{VERSION}"
+    out = DIST / f"DeadPixel-{VERSION}"
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
@@ -49,16 +49,16 @@ def main():
     home = pathlib.Path.home().name.encode()
     for sep in (b"\\", b"/"):
         data = data.replace(b"Users" + sep + home + sep, b"Users" + sep + b"build"[: len(home)].ljust(len(home), b"_") + sep)
-    (out / "Blocktime.exe").write_bytes(data)
+    (out / "DeadPixel.exe").write_bytes(data)
     for name in ("README.md", "CHANGELOG.md", "LICENSE"):
         shutil.copy2(REL / name, out / name)
     (out / "THIRD_PARTY_NOTICES.md").write_text(notices(), encoding="utf-8")
-    main_zip = DIST / f"Blocktime-{VERSION}.zip"
+    main_zip = DIST / f"DeadPixel-{VERSION}.zip"
     with zipfile.ZipFile(main_zip, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for f in sorted(out.iterdir()):
-            z.write(f, f"Blocktime-{VERSION}/{f.name}")
+            z.write(f, f"DeadPixel-{VERSION}/{f.name}")
     # the manual layout, from the installer's own payload
-    manual = DIST / f"Blocktime-{VERSION}-manual.zip"
+    manual = DIST / f"DeadPixel-{VERSION}-manual.zip"
     with zipfile.ZipFile(PAYLOAD) as src, zipfile.ZipFile(manual, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for info in src.infolist():
             data = src.read(info)
@@ -74,7 +74,7 @@ def main():
         print(f"{f}: {f.stat().st_size / 1e6:.1f} MB")
 
 
-MANUAL = """Blocktime - manual install (the installer Blocktime.exe does all of this for you)
+MANUAL = """DeadPixel - manual install (the installer DeadPixel.exe does all of this for you)
 
 1. Trepang2: copy the contents of CPPFPS/Binaries/Win64 into
    <Steam>/steamapps/common/Trepang2/CPPFPS/Binaries/Win64

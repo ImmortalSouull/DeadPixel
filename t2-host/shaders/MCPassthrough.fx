@@ -20,14 +20,26 @@ sampler sHostDepth { Texture = HostDepthTex; MinFilter = POINT; MagFilter = POIN
 texture HostDepthLiveTex : RONDEPTHLIVE;
 sampler sHostDepthLive { Texture = HostDepthLiveTex; MinFilter = POINT; MagFilter = POINT; AddressU = CLAMP; AddressV = CLAMP; };
 uniform bool HostDepthOwn = false;
+// screen pixels per GTA depth texel (2 when GTA renders at half resolution). Set by the add-on.
+uniform float HostDepthTexel = 1.0;
 uniform bool HostDepthCopy = false;
 
-float host_depth_raw(float2 uv)
+float host_depth_tap(float2 uv)
 {
 	if (!HostDepthOwn)
 		return tex2Dlod(ReShade::DepthBuffer, float4(uv, 0, 0)).x;
 	const float live = tex2Dlod(sHostDepthLive, float4(uv, 0, 0)).x;
 	return HostDepthCopy ? max(live, tex2Dlod(sHostDepth, float4(uv, 0, 0)).x) : live;
+}
+
+/// GTA's depth here, the nearest of the depth texels around this pixel: GTA renders at a lower resolution than it
+/// presents (Trepang2: half, and its TAA moves edges by up to a texel), and a thin near thing (a bed rail, a chair
+/// leg) that fell between two point samples let Minecraft's blocks behind it show through. Reversed Z: nearest = max.
+float host_depth_raw(float2 uv)
+{
+	const float2 t = 0.5 * float2(BUFFER_RCP_WIDTH, BUFFER_RCP_HEIGHT) * HostDepthTexel;
+	return max(max(host_depth_tap(uv + float2(-t.x, -t.y)), host_depth_tap(uv + float2(t.x, -t.y))),
+		max(host_depth_tap(uv + float2(-t.x, t.y)), host_depth_tap(uv + float2(t.x, t.y))));
 }
 
 // x = near, y = far, z = flags (1: [0,1] depth, 2: rows bottom-up, 4: reversed Z). Set by the add-on.
@@ -37,6 +49,10 @@ uniform float2 HostPlanes = float2(0.15, 10000.0);
 
 // Set true by the add-on only while it has uploaded a Minecraft frame; until then GTA passes through untouched.
 uniform bool McActive = false;
+// the part of Minecraft's frame (NDC) with anything drawn in it, and whether there is nothing at all: view rays that
+// never cross that part skip the search (set by the add-on from Minecraft's own count)
+uniform float4 McBox = float4(-1.0, -1.0, 1.0, 1.0);
+uniform bool McEmpty = false;
 
 uniform bool HostReversedZ < ui_label = "GTA depth is reversed"; > = true;
 uniform float DepthBias < ui_type = "drag"; ui_min = 0.0; ui_max = 1.0; ui_step = 0.005; ui_label = "Depth bias (m)";
@@ -50,8 +66,8 @@ uniform float LightMatch < ui_type = "drag"; ui_min = 0.0; ui_max = 1.0; ui_step
 	ui_tooltip = "Relight Minecraft by the (blurred) GTA picture around it: darker in shade, tinted by nearby light."; > = 0.85;
 uniform float LightReference < ui_type = "drag"; ui_min = 0.1; ui_max = 1.0; ui_step = 0.01; ui_label = "Neutral brightness";
 	ui_tooltip = "GTA brightness at which Minecraft keeps its own colours."; > = 0.3;
-uniform float NearFadeStart < ui_type = "drag"; ui_min = 0.0; ui_max = 2.0; ui_step = 0.01; ui_label = "Near fade start (m)"; > = 0.28;
-uniform float NearFadeEnd < ui_type = "drag"; ui_min = 0.0; ui_max = 3.0; ui_step = 0.01; ui_label = "Near fade end (m)"; > = 0.65;
+uniform float NearFadeStart < ui_type = "drag"; ui_min = 0.0; ui_max = 2.0; ui_step = 0.01; ui_label = "Near fade start (m)"; > = 0.06;
+uniform float NearFadeEnd < ui_type = "drag"; ui_min = 0.0; ui_max = 3.0; ui_step = 0.01; ui_label = "Near fade end (m)"; > = 0.16;
 uniform float MinLight < ui_type = "drag"; ui_min = 0.0; ui_max = 1.0; ui_step = 0.01; ui_label = "Darkest relight";
 	ui_tooltip = "Minecraft never gets darker than this share of its own brightness (Trepang2 has pitch-dark rooms: 0.25)."; > = 0.25;
 uniform float LightTint < ui_type = "drag"; ui_min = 0.0; ui_max = 1.0; ui_step = 0.01; ui_label = "Light colour"; > = 0.25;
@@ -173,6 +189,12 @@ void PS_Composite(float4 pos : SV_Position, float2 uv : TEXCOORD, out float4 out
 	// how far behind GTA's surface Minecraft may still show: more where that surface is seen at a grazing angle
 	const float allow = min(DepthBias + SlopeBias * abs(ddy(zh)), max(MaxBias, DepthBias));
 	float zm = 1e9;
+	if (McEmpty)
+	{
+		// nothing of Minecraft's in this frame: the picture is GTA's (what the search below would find too)
+		outInfo = float4(0.0, 0.0, zh, 0.0);
+		return;
+	}
 	if (Reproject)
 	{
 		// March this GTA pixel's ray (in GTA's current camera) from near to far, moving each point into the
@@ -184,6 +206,22 @@ void PS_Composite(float4 pos : SV_Position, float2 uv : TEXCOORD, out float4 out
 		const float zNear = 0.2, zFar = max(min(zh + allow, 400.0), 0.5);
 		float2 ndc = 0.0;
 		inside = false;
+		// the ray's two ends in Minecraft's frame: a straight segment there (both in front of its camera), so if both
+		// lie beyond the same edge of the box Minecraft drew in, the whole ray misses it: nothing to search
+		{
+			const float3 a = ray * zNear, b = ray * zFar;
+			const float3 pa = float3(dot(WarpRow0, a), dot(WarpRow1, a), dot(WarpRow2, a)) + WarpT;
+			const float3 pb = float3(dot(WarpRow0, b), dot(WarpRow1, b), dot(WarpRow2, b)) + WarpT;
+			if (pa.z < -1e-3 && pb.z < -1e-3)
+			{
+				const float2 na = pa.xy / -pa.z / mcScale, nb = pb.xy / -pb.z / mcScale;
+				if ((na.x < McBox.x && nb.x < McBox.x) || (na.x > McBox.z && nb.x > McBox.z) || (na.y < McBox.y && nb.y < McBox.y) || (na.y > McBox.w && nb.y > McBox.w))
+				{
+					outInfo = float4(0.0, 0.0, zh, 0.0);
+					return;
+				}
+			}
+		}
 		[loop] for (int i = 0; i < 24; ++i)
 		{
 			const float z = zNear * pow(zFar / zNear, i / 23.0);
@@ -243,8 +281,8 @@ void PS_Composite(float4 pos : SV_Position, float2 uv : TEXCOORD, out float4 out
 		return;
 	}
 
-	// what Minecraft has right at the camera (a mob attacking the player stands in its face) fades out instead of
-	// filling the screen; the hand and the HUD are the overlay layer and are not touched
+	// only what sits right on the near plane fades (a mob close to the camera is made see-through by Minecraft itself,
+	// keeping the blocks behind it); the hand and the HUD are the overlay layer and are not touched
 	const float visible = (zm < zh + allow ? 1.0 : 0.0) * smoothstep(NearFadeStart, NearFadeEnd, zm);
 	const float cover = world.a * visible;
 	outColor = float4(relight(world.rgb, uv, zm) * visible + host * (1.0 - cover), 1.0);

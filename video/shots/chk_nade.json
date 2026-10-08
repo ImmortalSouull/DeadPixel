@@ -1,0 +1,4 @@
+{"lead": 0.3, "tail": 0.3, "steps": [
+  {"op": ["god", "1"]}, {"pitch": -2}, {"wait": 0.4}, {"shot": "lab/shots/nade0.png"},
+  {"mark": "nade"}, {"op": ["nade"]}, {"wait": 1.2}, {"shot": "lab/shots/nade1.png"}, {"wait": 3.0}, {"shot": "lab/shots/nade2.png"}
+]}

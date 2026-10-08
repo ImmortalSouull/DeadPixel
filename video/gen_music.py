@@ -1,4 +1,4 @@
-"""A short driving beat for the Blocktime video, synthesised (no third-party music): 128 bpm, a low pulse, a kick,
+"""A short driving beat for the DeadPixel video, synthesised (no third-party music): 128 bpm, a low pulse, a kick,
 closed hats, a minor-key bass drone and a few square-wave "blocky" plucks (the Minecraft touch). Writes video/music.wav.
 
   uv run --with numpy python video/gen_music.py [seconds=48]

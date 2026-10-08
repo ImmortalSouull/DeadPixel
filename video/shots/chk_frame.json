@@ -1,0 +1,5 @@
+{"lead": 0.2, "tail": 0.2, "steps": [
+  {"op": ["god", "1"]}, {"yaw": [180, 4, 400]}, {"pitch": -9}, {"pose": 1}, {"clear": 12}, {"wait": 0.5},
+  {"op": ["--raw", "{\"t\":\"gta\",\"op\":\"tap\",\"k\":\"flashlight\"}"]}, {"wait": 0.8}, {"shot": "lab/shots/frame_fl.png"},
+  {"op": ["--raw", "{\"t\":\"gta\",\"op\":\"tap\",\"k\":\"flashlight\"}"]}, {"yaw": [-180, 4, 400]}
+]}

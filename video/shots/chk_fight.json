@@ -1,0 +1,4 @@
+{"lead": 0.3, "tail": 0.3, "steps": [
+  {"op": ["god", "1"]}, {"pitch": -3}, {"op": ["ai"]}, {"op": ["mobsat", "3"]}, {"wait": 4.0}, {"op": ["aim"]}, {"wait": 1.5}, {"shot": "lab/shots/fight0.png"},
+  {"wait": 5.0}, {"op": ["aim"]}, {"wait": 1.0}, {"shot": "lab/shots/fight1.png"}, {"wait": 5.0}, {"op": ["mobdist"]}, {"shot": "lab/shots/fight2.png"}
+]}

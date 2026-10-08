@@ -130,6 +130,46 @@ public final class WorldBridge {
 				}
 			}
 
+			// and the ones earlier sessions left in the saved world (the host's probe has changed since, and stale
+			// barriers over the new ones put blocks and mobs in the air): every loaded chunk around the players
+			int swept = 0;
+			BlockPos.MutableBlockPos p = new BlockPos.MutableBlockPos();
+			for (ServerPlayer player : level.players()) {
+				int ccx = player.getBlockX() >> 4, ccz = player.getBlockZ() >> 4;
+				for (int cx = ccx - 8; cx <= ccx + 8; cx++) {
+					for (int cz = ccz - 8; cz <= ccz + 8; cz++) {
+						net.minecraft.world.level.chunk.LevelChunk chunk = level.getChunkSource().getChunkNow(cx, cz);
+						if (chunk == null) {
+							continue;
+						}
+
+						net.minecraft.world.level.chunk.LevelChunkSection[] sections = chunk.getSections();
+						for (int i = 0; i < sections.length; i++) {
+							if (sections[i].hasOnlyAir() || !sections[i].maybeHas(state -> state.is(Blocks.BARRIER))) {
+								continue;
+							}
+
+							int y0 = chunk.getSectionYFromSectionIndex(i) << 4;
+							for (int y = 0; y < 16; y++) {
+								for (int z = 0; z < 16; z++) {
+									for (int x = 0; x < 16; x++) {
+										if (sections[i].getBlockState(x, y, z).is(Blocks.BARRIER)) {
+											p.set((cx << 4) + x, y0 + y, (cz << 4) + z);
+											level.setBlock(p, Blocks.AIR.defaultBlockState(), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
+											swept++;
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+
+			if (swept > 0) {
+				Passthrough.LOG.info("swept {} stale barriers from earlier sessions", swept);
+			}
+
 			placingGround = false;
 			barriers.clear();
 		});
@@ -404,7 +444,12 @@ public final class WorldBridge {
 		s.execute(() -> {
 			hostBlast = true;
 			try {
-				s.overworld().explode(null, x, y, z, power, net.minecraft.world.level.Level.ExplosionInteraction.TNT);
+				// never centred inside a blast-proof barrier (the host's floor): its rays would all die at once
+				double cy = y;
+				for (int i = 0; i < 3 && s.overworld().getBlockState(BlockPos.containing(x, cy, z)).is(Blocks.BARRIER); i++) {
+					cy = Math.floor(cy) + 1.2;
+				}
+				s.overworld().explode(null, x, cy, z, power, net.minecraft.world.level.Level.ExplosionInteraction.TNT);
 			} finally {
 				hostBlast = false;
 			}

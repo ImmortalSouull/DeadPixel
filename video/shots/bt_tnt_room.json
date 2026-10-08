@@ -1,0 +1,6 @@
+{"lead": 1.0, "tail": 3.0, "steps": [
+  {"op": ["god", "1"]}, {"pitch": -12}, {"pose": 1},
+  {"ahead": [4, 0, "summon minecraft:tnt {x} {y} {z} {{fuse:50}}", 0]},
+  {"ahead": [4, 1.5, "summon minecraft:tnt {x} {y} {z} {{fuse:55}}", 0]},
+  {"wait": 5.0}
+]}

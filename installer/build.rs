@@ -1,11 +1,11 @@
 fn main() {
     println!("cargo:rerun-if-changed=build/payload.zip");
-    println!("cargo:rerun-if-changed=assets/blocktime.ico");
+    println!("cargo:rerun-if-changed=assets/deadpixel.ico");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         let mut res = winresource::WindowsResource::new();
-        res.set_icon("assets/blocktime.ico")
-            .set("ProductName", "Blocktime")
-            .set("FileDescription", "Blocktime - Trepang2 x Minecraft")
+        res.set_icon("assets/deadpixel.ico")
+            .set("ProductName", "DeadPixel")
+            .set("FileDescription", "DeadPixel - Trepang2 x Minecraft")
             .set("LegalCopyright", "Fan mod, not affiliated with Trepang Studios, Team17 or Mojang")
             .set_manifest(
                 r#"<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">

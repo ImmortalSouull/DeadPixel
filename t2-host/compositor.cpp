@@ -79,6 +79,11 @@ namespace
 		resource_view srv = {0};
 	};
 	Layer g_world, g_depth, g_overlay;
+	bool g_overlayBlank = false; // the overlay texture holds zeros (Minecraft said its overlay was empty)
+	std::vector<uint8_t> g_zeros;
+	// where Minecraft drew anything, in its frame's NDC (x0, y0, x1, y1); empty: nothing at all
+	float g_mcBox[4] = {-1.0f, -1.0f, 1.0f, 1.0f};
+	bool g_mcEmpty = false;
 	uint32_t g_width = 0, g_height = 0;
 	bool g_hasFrame = false;
 	float g_mcNear = 0.05f, g_mcFar = 2048.0f;
@@ -216,10 +221,12 @@ namespace
 			}
 			g_width = w;
 			g_height = h;
+			g_overlayBlank = false;
 			bind(runtime);
 		}
 		const uint8_t *base = g_view + kHeader + g_stride * slot;
 		const size_t layer = size_t(w) * h * 4;
+		const int32_t flags = read<int32_t>(desc + 44);
 		subresource_data data;
 		data.row_pitch = w * 4;
 		data.slice_pitch = static_cast<uint32_t>(layer);
@@ -227,10 +234,31 @@ namespace
 		dev->update_texture_region(data, g_world.tex, 0);
 		data.data = const_cast<uint8_t *>(base + layer);
 		dev->update_texture_region(data, g_depth.tex, 0);
-		data.data = const_cast<uint8_t *>(base + 2 * layer);
-		dev->update_texture_region(data, g_overlay.tex, 0);
+		// the overlay (Minecraft's hand and HUD) is empty most of the time (flag 8): then it is not copied at all, the
+		// texture is just zeroed once
+		if ((flags & 8) == 0)
+		{
+			data.data = const_cast<uint8_t *>(base + 2 * layer);
+			dev->update_texture_region(data, g_overlay.tex, 0);
+			g_overlayBlank = false;
+		}
+		else if (!g_overlayBlank)
+		{
+			if (g_zeros.size() != layer)
+				g_zeros.assign(layer, 0);
+			data.data = g_zeros.data();
+			dev->update_texture_region(data, g_overlay.tex, 0);
+			g_overlayBlank = true;
+		}
 		if (read<int64_t>(desc) != seq)
 			return; // Minecraft rewrote the slot mid-copy: show the next one instead
+		// the box Minecraft's content is in (pixels, rows as stored), a pixel wider all round, as NDC; x1 < x0: nothing
+		const int32_t bx0 = read<int32_t>(desc + 104), by0 = read<int32_t>(desc + 108), bx1 = read<int32_t>(desc + 112), by1 = read<int32_t>(desc + 116);
+		g_mcEmpty = (flags & 16) != 0 || bx1 < bx0 || by1 < by0;
+		g_mcBox[0] = float(bx0 - 1) / float(w) * 2.0f - 1.0f;
+		g_mcBox[1] = float(by0 - 1) / float(h) * 2.0f - 1.0f;
+		g_mcBox[2] = float(bx1 + 2) / float(w) * 2.0f - 1.0f;
+		g_mcBox[3] = float(by1 + 2) / float(h) * 2.0f - 1.0f;
 		g_lastPublish = published;
 		g_mcNear = read<float>(desc + 32);
 		g_mcFar = read<float>(desc + 36);
@@ -620,6 +648,18 @@ namespace
 		}
 		if (const effect_uniform_variable v = runtime->find_uniform_variable(kEffect, "HostDepthOwn"); v.handle != 0)
 			runtime->set_uniform_value_bool(v, g_sceneDepthSrv.handle != 0);
+		if (const effect_uniform_variable v = runtime->find_uniform_variable(kEffect, "HostDepthTexel"); v.handle != 0)
+		{
+			// how many screen pixels one texel of the scene depth covers (GTA's render resolution vs the back buffer)
+			float texel = 1.0f;
+			if (g_sceneDepth.handle != 0 && g_bbWidth > 0)
+			{
+				const resource_desc d = runtime->get_device()->get_resource_desc(g_sceneDepth);
+				if (d.texture.width > 0)
+					texel = std::max(1.0f, float(g_bbWidth.load()) / float(d.texture.width));
+			}
+			runtime->set_uniform_value_float(v, texel);
+		}
 		if (const effect_uniform_variable v = runtime->find_uniform_variable(kEffect, "HostDepthCopy"); v.handle != 0)
 			runtime->set_uniform_value_bool(v, g_copiedThisFrame && g_depthCopySrv.handle != 0);
 	}
@@ -643,6 +683,10 @@ namespace
 			return;
 		if (const effect_uniform_variable v = runtime->find_uniform_variable(kEffect, "McPlanes"); v.handle != 0)
 			runtime->set_uniform_value_float(v, g_mcNear, g_mcFar, float(g_mcFlags));
+		if (const effect_uniform_variable v = runtime->find_uniform_variable(kEffect, "McBox"); v.handle != 0)
+			runtime->set_uniform_value_float(v, g_mcBox[0], g_mcBox[1], g_mcBox[2], g_mcBox[3]);
+		if (const effect_uniform_variable v = runtime->find_uniform_variable(kEffect, "McEmpty"); v.handle != 0)
+			runtime->set_uniform_value_bool(v, g_mcEmpty);
 		// a scene's look overrides the preset's light matching and depth bias; the preset's values come back after
 		auto look = [&](const char *name, float want, float &saved) {
 			const effect_uniform_variable v = runtime->find_uniform_variable(kEffect, name);

@@ -150,8 +150,9 @@ public class PassthroughClient implements ClientModInitializer {
 		options.framerateLimit().set(60);
 		// a host map is at most ~150 m across, and every map has its own region far from the others: entering a
 		// mission teleports Steve there and the server loads the chunks around him at once (16 chunks: 1089 of them,
-		// a 2-4 s server stall; 10: 441). Mobs and the host's people only matter within 96 blocks (MobWar).
-		options.renderDistance().set(10);
+		// a 2-4 s server stall; 10: 441; 7: 225). Mobs and the host's people only matter within 96 blocks (MobWar), and
+		// the host takes blocks within 96 of its camera: 7 chunks (112 m) draws everything that can matter.
+		options.renderDistance().set(7);
 		options.simulationDistance().set(8);
 		options.save();
 	}

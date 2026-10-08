@@ -1,0 +1,7 @@
+{"lead": 1.0, "tail": 2.5, "steps": [
+  {"op": ["god", "1"]}, {"pitch": -14}, {"pose": 1},
+  {"ahead": [2.4, -0.6, "summon minecraft:tnt {x} {y} {z} {{fuse:45}}", 0]},
+  {"ahead": [2.4, 1.2, "summon minecraft:tnt {x} {y} {z} {{fuse:48}}", 0]},
+  {"wait": 1.0}, {"mark": "focus"}, {"op": ["slowmo"]},
+  {"wait": 6.5}, {"op": ["slowmo"]}, {"wait": 1.5}
+]}

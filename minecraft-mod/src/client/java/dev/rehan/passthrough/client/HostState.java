@@ -16,11 +16,13 @@ public final class HostState {
 	 * @param bodyYaw the player's body yaw (third person)
 	 * @param drive Minecraft moves the player (elytra flight) and the host follows; lookYaw/lookPitch steer
 	 * @param gun the player holds one of the host's guns (Steve aims it; his own item isn't drawn)
+	 * @param aiming build mode: the host traces the camera ray each frame (aim is null when it meets nothing in reach)
+	 * @param aim build mode: where the camera ray meets the host's own geometry, {x, y, z, nx, ny, nz}, or null
 	 */
 	public record Pose(
 		long hostFrame, double x, double y, double z, float yaw, float pitch, float roll, float fov,
 		boolean firstPerson, double px, double py, double pz, float bodyYaw, long receivedNanos,
-		boolean drive, float lookYaw, float lookPitch, boolean gun
+		boolean drive, float lookYaw, float lookPitch, boolean gun, boolean aiming, double[] aim
 	) {
 	}
 
@@ -54,8 +56,23 @@ public final class HostState {
 			m.has("drive") && m.get("drive").getAsBoolean(),
 			m.has("look") ? m.getAsJsonArray("look").get(0).getAsFloat() : yaw,
 			m.has("look") ? m.getAsJsonArray("look").get(1).getAsFloat() : r.get(1).getAsFloat(),
-			m.has("gun") && m.get("gun").getAsBoolean()
+			m.has("gun") && m.get("gun").getAsBoolean(),
+			m.has("aim"),
+			m.has("aim") ? aim(m.getAsJsonArray("aim")) : null
 		);
+	}
+
+	private static double[] aim(final JsonArray a) {
+		if (a.size() < 6) {
+			return null;
+		}
+
+		double[] out = new double[6];
+		for (int i = 0; i < 6; i++) {
+			out[i] = a.get(i).getAsDouble();
+		}
+
+		return out;
 	}
 
 	/** The latest pose if the host is still sending, else null. */

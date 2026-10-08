@@ -1,0 +1,13 @@
+{"lead": 0.3, "tail": 0.3, "steps": [
+  {"op": ["god", "1"]}, {"pitch": 0}, {"pose": 1}, {"clear": 12}, {"wait": 0.8},
+  {"ahead": [4, -1, "fill {ix} {iy} {iz} {ix} {iy2} {iz} minecraft:glass"]},
+  {"ahead": [4, 0, "fill {ix} {iy} {iz} {ix} {iy2} {iz} minecraft:dirt"]},
+  {"ahead": [4, 1, "fill {ix} {iy} {iz} {ix} {iy2} {iz} minecraft:stone"]},
+  {"ahead": [4, 2, "fill {ix} {iy} {iz} {ix} {iy2} {iz} minecraft:iron_block"]},
+  {"wait": 1.2}, {"shot": "lab/shots/bul0.png"},
+  {"mark": "fire at dirt"}, {"fire": [3, 350]}, {"wait": 0.8}, {"shot": "lab/shots/bul1.png"},
+  {"yaw": [-14, 4, 400]}, {"fire": [3, 350]}, {"wait": 0.8}, {"shot": "lab/shots/bul2.png"},
+  {"yaw": [28, 4, 400]}, {"fire": [6, 300]}, {"wait": 0.8}, {"shot": "lab/shots/bul3.png"},
+  {"yaw": [12, 4, 400]}, {"fire": [8, 250]}, {"wait": 0.8}, {"shot": "lab/shots/bul4.png"},
+  {"yaw": [-26, 4, 400]}, {"wait": 0.5}, {"shot": "lab/shots/bul5.png"}
+]}

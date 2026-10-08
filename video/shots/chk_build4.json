@@ -1,0 +1,5 @@
+{"lead": 0.3, "tail": 0.3, "steps": [
+  {"op": ["god", "1"]}, {"pitch": -30}, {"op": ["test"]}, {"wait": 2.5}, {"shot": "lab/shots/build10.png"},
+  {"op": ["build"]}, {"wait": 0.8}, {"key": "0x38"}, {"wait": 0.5}, {"mouse": "right"}, {"wait": 1.0}, {"shot": "lab/shots/build11.png"},
+  {"op": ["build"]}, {"wait": 0.5}
+]}

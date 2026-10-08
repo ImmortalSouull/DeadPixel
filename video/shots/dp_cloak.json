@@ -1,0 +1,4 @@
+{"lead": 1.0, "tail": 2.0, "steps": [
+  {"op": ["god", "1"]}, {"yaw": [-90, 3, 300]}, {"pitch": -3}, {"op": ["hunt", "1"]}, {"op": ["mobsclear"]}, {"wait": 0.3},
+  {"op": ["mobs", "3"]}, {"near": [5.0, 14]}, {"mark": "cloak"}, {"op": ["cloak"]}, {"wait": 8.0}, {"op": ["mobsclear"]}, {"yaw": [90, 3, 300]}
+]}

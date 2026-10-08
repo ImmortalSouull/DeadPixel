@@ -38,8 +38,8 @@ def running(name):
 ROOT_DIR = Path(__file__).resolve().parent.parent
 BUILDS = ROOT_DIR / "lab" / "builds"
 BREADCRUMBS = MAIN_DLL.parent.parent / "crash_breadcrumbs.log"
-# both Minecraft game dirs: the dev client (src/mc/run) and the installed Blocktime one; the newest crash folder counts
-MC_DIRS = [Path(__file__).resolve().parent.parent / "src" / "mc" / "run", Path.home() / "AppData" / "Local" / "Blocktime" / "minecraft"]
+# both Minecraft game dirs: the dev client (src/mc/run) and the installed DeadPixel one; the newest crash folder counts
+MC_DIRS = [Path(__file__).resolve().parent.parent / "src" / "mc" / "run", Path.home() / "AppData" / "Local" / "DeadPixel" / "minecraft"]
 MC_CRASHES = max((d / "crash-reports" for d in MC_DIRS), key=lambda f: f.stat().st_mtime if f.exists() else 0)
 
 

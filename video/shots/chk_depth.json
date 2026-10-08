@@ -1,0 +1,79 @@
+{
+"lead": 0.2,
+"tail": 0.2,
+"steps": [
+{
+"op": [
+"god",
+"1"
+]
+},
+{
+"yaw": [
+180,
+4,
+400
+]
+},
+{
+"pitch": -6
+},
+{
+"pose": 1
+},
+{
+"clear": 12
+},
+{
+"wait": 0.6
+},
+{
+"wait": 0.3
+},
+{
+"ahead": [
+5,
+-1,
+"fill {ix} {iy} {iz} {ix} {iy2} {iz} minecraft:diamond_block"
+]
+},
+{
+"ahead": [
+5,
+1,
+"fill {ix} {iy} {iz} {ix} {iy2} {iz} minecraft:diamond_block"
+]
+},
+{
+"wait": 1.0
+},
+{
+"shot": "lab/shots/depth0.png"
+},
+{
+"op": [
+"debug",
+"3"
+]
+},
+{
+"wait": 0.5
+},
+{
+"shot": "lab/shots/depth3.png"
+},
+{
+"op": [
+"debug",
+"0"
+]
+},
+{
+"yaw": [
+-180,
+4,
+400
+]
+}
+]
+}

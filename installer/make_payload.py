@@ -1,9 +1,9 @@
-"""Builds installer/build/payload.zip: everything Blocktime installs, taken from the project's own builds.
+"""Builds installer/build/payload.zip: everything DeadPixel installs, taken from the project's own builds.
 
   game/ -> Trepang2's CPPFPS/Binaries/Win64: UE4SS (our build) + the T2Passthrough mod, ReShade (add-on build) + the
            compositor shader, minimal configs (only our mod enabled, no dump keys, no console).
   mc/   -> the Minecraft side: the Fabric Loader version JSON for 26.3 (the launcher fetches the libraries and the
-           game itself), Fabric API + the passthrough mod, and options.txt for the Blocktime game dir.
+           game itself), Fabric API + the passthrough mod, and options.txt for the DeadPixel game dir.
   licenses/ -> third-party licences shown on the About page.
 
 Run: python installer/make_payload.py   (after scripts/build-host.bat and the Gradle build)
@@ -66,12 +66,12 @@ def main() -> int:
 
     files[f"mc/versions/{FABRIC_VERSION}/{FABRIC_VERSION}.json"] = FABRIC_JSON.read_bytes()
     files[f"mc/mods/{FABRIC_API.name}"] = FABRIC_API.read_bytes()
-    files["mc/mods/blocktime-passthrough.jar"] = MC_JAR.read_bytes()
+    files["mc/mods/deadpixel-passthrough.jar"] = MC_JAR.read_bytes()
     files["mc/options.txt"] = mc_options().encode("utf-8")
 
     files["licenses/UE4SS.txt"] = (LAB / "ue4ss" / "LICENSE").read_bytes()
     assets = ROOT / "installer" / "assets"
-    for name in ("PressStart2P", "Oswald", "RobotoCondensed", "JetBrainsMono"):
+    for name in ("ChakraPetch", "ShareTechMono", "PressStart2P", "RussoOne", "Play", "PTMono"):
         files[f"licenses/{name}-OFL.txt"] = (assets / f"OFL-{name}.txt").read_bytes()
 
     files = {name: scrub(data) if name.endswith(".dll") else data for name, data in files.items()}

@@ -1,0 +1,8 @@
+{"lead": 1.0, "tail": 4.0, "steps": [
+  {"op": ["god", "1"]}, {"yaw": [180, 6, 600]}, {"pitch": -9}, {"pose": 1}, {"wait": 0.4},
+  {"op": ["--raw", "{\"t\":\"gta\",\"op\":\"tap\",\"k\":\"flashlight\"}"]}, {"wait": 0.6},
+  {"ahead": [4.2, -0.9, "summon minecraft:tnt {x} {y} {z} {{fuse:50}}", 1]},
+  {"ahead": [4.2, 1.1, "summon minecraft:tnt {x} {y} {z} {{fuse:56}}", 1]},
+  {"mark": "lit"}, {"wait": 7.5},
+  {"op": ["--raw", "{\"t\":\"gta\",\"op\":\"tap\",\"k\":\"flashlight\"}"]}, {"yaw": [-180, 6, 600]}
+]}

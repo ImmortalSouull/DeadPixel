@@ -1,0 +1,8 @@
+{"lead": 0.3, "tail": 0.3, "steps": [
+  {"op": ["god", "1"]}, {"pitch": -28}, {"pose": 1}, {"clear": 10}, {"wait": 0.8},
+  {"op": ["build"]}, {"wait": 0.8}, {"key": "0x38"}, {"wait": 0.5},
+  {"mark": "use via link"}, {"op": ["--raw", "{\"t\":\"key\",\"k\":\"use\",\"down\":true}"]}, {"wait": 0.25}, {"op": ["--raw", "{\"t\":\"key\",\"k\":\"use\",\"down\":false}"]},
+  {"wait": 1.0}, {"shot": "lab/shots/build5.png"},
+  {"mark": "use via posted click"}, {"mouse": "right"}, {"wait": 1.0}, {"shot": "lab/shots/build6.png"},
+  {"op": ["build"]}, {"wait": 0.5}
+]}

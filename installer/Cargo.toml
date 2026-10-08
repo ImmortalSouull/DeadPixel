@@ -1,12 +1,12 @@
 [package]
-name = "blocktime"
-version = "1.0.0"
+name = "deadpixel"
+version = "1.1.0"
 edition = "2021"
-description = "Blocktime: Trepang2 x Minecraft - installer and launcher"
+description = "DeadPixel: Trepang2 x Minecraft - installer and launcher"
 build = "build.rs"
 
 [[bin]]
-name = "Blocktime"
+name = "DeadPixel"
 path = "src/main.rs"
 
 [dependencies]

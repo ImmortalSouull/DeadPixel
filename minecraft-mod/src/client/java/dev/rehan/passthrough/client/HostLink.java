@@ -95,6 +95,7 @@ public final class HostLink extends WebSocketServer {
 
 					MobWar.peds(flat);
 				}
+				case "cloak" -> dev.rehan.passthrough.MobWar.playerCloaked();
 				case "mobdmg" -> MobWar.damage(m.get("id").getAsInt(), m.get("d").getAsDouble(), m.has("p") && m.get("p").getAsInt() != 0);
 				case "spawnmobs" -> {
 					if (m.has("spots")) {

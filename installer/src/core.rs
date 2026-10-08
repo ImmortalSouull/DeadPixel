@@ -1,4 +1,4 @@
-//! Everything Blocktime does to the PC: finding the games, installing / repairing / removing the mod, the settings
+//! Everything DeadPixel does to the PC: finding the games, installing / repairing / removing the mod, the settings
 //! file the Trepang2 mod reads, and starting both games. No UI here: long jobs report through `Progress`.
 
 use std::collections::BTreeMap;
@@ -17,20 +17,26 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const GAME_APP_ID: &str = "1164940";
 pub const GAME_EXE: &str = "CPPFPS-Win64-Shipping.exe";
 pub const FABRIC_VERSION: &str = "fabric-loader-0.19.5-26.3";
-pub const PROFILE_ID: &str = "blocktime";
+pub const PROFILE_ID: &str = "deadpixel";
 const PAYLOAD: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/build/payload.zip"));
 const PROFILE_ICON: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/profile_icon.txt"));
 const STORE_PACKAGE: &str = "Microsoft.4297127D64EC6_8wekyb3d8bbwe";
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+fn yes() -> bool {
+    true
+}
+
 // ---------------------------------------------------------------------------------------------------------------
-// state kept between runs: %LOCALAPPDATA%\Blocktime\state.json
+// state kept between runs: %LOCALAPPDATA%\DeadPixel\state.json
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Settings {
     pub mc_scale: u32,
     pub mobs_hunt_player: bool,
     pub squad_fights_mobs: bool,
+    #[serde(default = "yes")]
+    pub tnt_wrecks: bool,
     pub dedicated_gpu: bool,
     pub desktop_shortcut: bool,
     pub keep_world: bool,
@@ -43,6 +49,7 @@ impl Default for Settings {
             mc_scale: 75,
             mobs_hunt_player: true,
             squad_fights_mobs: true,
+            tnt_wrecks: true,
             dedicated_gpu: true,
             desktop_shortcut: true,
             keep_world: true,
@@ -79,15 +86,15 @@ pub struct State {
 
 /// Self-test mode (`--selftest`): everything under a scratch folder, no registry, shortcuts or process checks.
 pub fn selftest() -> bool {
-    std::env::var_os("BLOCKTIME_SELFTEST").is_some()
+    std::env::var_os("DEADPIXEL_SELFTEST").is_some()
 }
 
 pub fn app_dir() -> PathBuf {
-    if let Some(home) = std::env::var_os("BLOCKTIME_HOME") {
+    if let Some(home) = std::env::var_os("DEADPIXEL_HOME") {
         return PathBuf::from(home);
     }
     let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
-    base.join("Blocktime")
+    base.join("DeadPixel")
 }
 
 impl State {
@@ -444,7 +451,7 @@ fn install_inner(state: &mut State, p: &Progress) -> Result<String, String> {
     let ours: std::collections::HashSet<String> = inst.game_files.iter().cloned().collect();
 
     // --- Trepang2
-    p.stage(0.08, "Trepang2: UE4SS, ReShade and the Blocktime host mod");
+    p.stage(0.08, "Trepang2: UE4SS, ReShade and the DeadPixel host mod");
     let entries = payload_entries("game/")?;
     let n = entries.len().max(1) as f32;
     for (i, (rel, data)) in entries.iter().enumerate() {
@@ -495,7 +502,7 @@ fn install_inner(state: &mut State, p: &Progress) -> Result<String, String> {
     p.line(LineKind::Ok, format!("Trepang2: {} files in {}", entries.len(), w64.display()));
 
     // --- Minecraft
-    p.stage(0.55, "Minecraft: Fabric Loader, Fabric API and the Blocktime mod");
+    p.stage(0.55, "Minecraft: Fabric Loader, Fabric API and the DeadPixel mod");
     let game_dir = app_dir().join("minecraft");
     let mods = game_dir.join("mods");
     fs::create_dir_all(&mods).map_err(|e| format!("{}: {e}", mods.display()))?;
@@ -503,7 +510,7 @@ fn install_inner(state: &mut State, p: &Progress) -> Result<String, String> {
     if let Ok(list) = fs::read_dir(&mods) {
         for f in list.flatten() {
             let name = f.file_name().to_string_lossy().to_lowercase();
-            if name.starts_with("blocktime") || name.starts_with("fabric-api") {
+            if name.starts_with("deadpixel") || name.starts_with("fabric-api") {
                 let _ = fs::remove_file(f.path());
             }
         }
@@ -536,12 +543,12 @@ fn install_inner(state: &mut State, p: &Progress) -> Result<String, String> {
     inst.game_dir = game_dir.clone();
     p.line(LineKind::Ok, format!("Minecraft mods in {}", mods.display()));
 
-    p.stage(0.72, "Minecraft Launcher: the Blocktime profile");
+    p.stage(0.72, "Minecraft Launcher: the DeadPixel profile");
     if !selftest() && close_launcher() {
         p.line(LineKind::Warn, "closed the Minecraft Launcher (it only sees new profiles when it starts)");
     }
     add_profile(&mc_dir, &game_dir, true)?;
-    p.line(LineKind::Ok, "profile \"Blocktime\" added (Minecraft 26.3 + Fabric)");
+    p.line(LineKind::Ok, "profile \"DeadPixel\" added (Minecraft 26.3 + Fabric)");
 
     // --- GPU
     if state.settings.dedicated_gpu && !selftest() {
@@ -561,19 +568,19 @@ fn install_inner(state: &mut State, p: &Progress) -> Result<String, String> {
 
     // --- the app itself, shortcuts, Apps & features entry
     p.stage(0.88, "Shortcuts and the Windows uninstall entry");
-    let exe = install_self().map_err(|e| format!("copying Blocktime.exe: {e}"))?;
+    let exe = install_self().map_err(|e| format!("copying DeadPixel.exe: {e}"))?;
     if selftest() {
         inst.version = VERSION.to_string();
         state.installed = Some(inst);
         state.game_dir = Some(game);
         state.mc_dir = Some(mc_dir);
-        return Ok("Blocktime is installed (self-test: no shortcuts)".into());
+        return Ok("DeadPixel is installed (self-test: no shortcuts)".into());
     }
     let start_menu = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_default().join("Microsoft\\Windows\\Start Menu\\Programs");
-    let _ = make_shortcut(&exe, &start_menu.join("Blocktime.lnk"));
+    let _ = make_shortcut(&exe, &start_menu.join("DeadPixel.lnk"));
     if state.settings.desktop_shortcut {
         if let Some(desktop) = desktop_dir() {
-            let _ = make_shortcut(&exe, &desktop.join("Blocktime.lnk"));
+            let _ = make_shortcut(&exe, &desktop.join("DeadPixel.lnk"));
         }
     }
     register_uninstall(&exe).map_err(|e| format!("uninstall entry: {e}"))?;
@@ -582,7 +589,7 @@ fn install_inner(state: &mut State, p: &Progress) -> Result<String, String> {
     state.installed = Some(inst);
     state.game_dir = Some(game);
     state.mc_dir = Some(mc_dir);
-    Ok("Blocktime is installed".into())
+    Ok("DeadPixel is installed".into())
 }
 
 /// The Trepang2 mod's settings file (read once when Trepang2 starts).
@@ -592,10 +599,11 @@ pub fn write_config(w64: &Path, s: &Settings) -> std::io::Result<()> {
     fs::write(
         dir.join("config.ini"),
         format!(
-            "; written by Blocktime {VERSION}; read when Trepang2 starts\r\n[blocktime]\r\nmc_scale={}\r\nmobs_hunt_player={}\r\nallies_fight_mobs={}\r\n",
+            "; written by DeadPixel {VERSION}; read when Trepang2 starts\r\n[deadpixel]\r\nmc_scale={}\r\nmobs_hunt_player={}\r\nallies_fight_mobs={}\r\ntnt_wrecks_level={}\r\n",
             s.mc_scale.clamp(25, 100),
             s.mobs_hunt_player as u8,
-            s.squad_fights_mobs as u8
+            s.squad_fights_mobs as u8,
+            s.tnt_wrecks as u8
         ),
     )
 }
@@ -614,13 +622,13 @@ fn now_iso() -> String {
     format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:03}Z", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond, t.wMilliseconds)
 }
 
-/// Adds (or refreshes) the Blocktime profile. `select`: newest lastUsed, so the launcher opens with it chosen.
+/// Adds (or refreshes) the DeadPixel profile. `select`: newest lastUsed, so the launcher opens with it chosen.
 pub fn add_profile(mc_dir: &Path, game_dir: &Path, select: bool) -> Result<(), String> {
     let path = profiles_path(mc_dir);
     fs::create_dir_all(mc_dir).map_err(|e| e.to_string())?;
     let mut json: serde_json::Value = match fs::read_to_string(&path) {
         Ok(t) => {
-            let backup = app_dir().join("launcher_profiles.before-blocktime.json");
+            let backup = app_dir().join("launcher_profiles.before-deadpixel.json");
             if !backup.exists() {
                 let _ = fs::create_dir_all(app_dir());
                 let _ = fs::write(&backup, &t);
@@ -641,7 +649,7 @@ pub fn add_profile(mc_dir: &Path, game_dir: &Path, select: bool) -> Result<(), S
         "lastUsed": if select { now.clone() } else { "1970-01-02T00:00:00.000Z".to_string() },
         "icon": PROFILE_ICON.trim(),
         "lastVersionId": FABRIC_VERSION,
-        "name": "Blocktime",
+        "name": "DeadPixel",
         "type": "custom",
         "gameDir": game_dir.to_string_lossy(),
         "javaArgs": "-Xmx4G -XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50",
@@ -706,7 +714,7 @@ fn install_self() -> std::io::Result<PathBuf> {
     let me = std::env::current_exe()?;
     let dir = app_dir();
     fs::create_dir_all(&dir)?;
-    let dest = dir.join("Blocktime.exe");
+    let dest = dir.join("DeadPixel.exe");
     if !same_file(&me, &dest) {
         fs::copy(&me, &dest)?;
     }
@@ -721,7 +729,7 @@ fn same_file(a: &Path, b: &Path) -> bool {
 }
 
 pub fn running_from_app_dir() -> bool {
-    std::env::current_exe().map(|me| same_file(&me, &app_dir().join("Blocktime.exe"))).unwrap_or(false)
+    std::env::current_exe().map(|me| same_file(&me, &app_dir().join("DeadPixel.exe"))).unwrap_or(false)
 }
 
 fn desktop_dir() -> Option<PathBuf> {
@@ -745,7 +753,7 @@ fn powershell(script: &str) -> std::io::Result<bool> {
 fn make_shortcut(target: &Path, link: &Path) -> std::io::Result<bool> {
     let q = |p: &Path| p.to_string_lossy().replace('\'', "''");
     powershell(&format!(
-        "$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{}');$s.TargetPath='{}';$s.WorkingDirectory='{}';$s.IconLocation='{},0';$s.Description='Blocktime: Trepang2 x Minecraft';$s.Save()",
+        "$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{}');$s.TargetPath='{}';$s.WorkingDirectory='{}';$s.IconLocation='{},0';$s.Description='DeadPixel: Trepang2 x Minecraft';$s.Save()",
         q(link),
         q(target),
         q(target.parent().unwrap_or(Path::new("."))),
@@ -753,14 +761,14 @@ fn make_shortcut(target: &Path, link: &Path) -> std::io::Result<bool> {
     ))
 }
 
-const UNINSTALL_KEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Blocktime";
+const UNINSTALL_KEY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\DeadPixel";
 
 fn register_uninstall(exe: &Path) -> std::io::Result<()> {
     let (k, _) = RegKey::predef(HKEY_CURRENT_USER).create_subkey(UNINSTALL_KEY)?;
     let e = exe.to_string_lossy().to_string();
-    k.set_value("DisplayName", &"Blocktime (Trepang2 x Minecraft)")?;
+    k.set_value("DisplayName", &"DeadPixel (Trepang2 x Minecraft)")?;
     k.set_value("DisplayVersion", &VERSION)?;
-    k.set_value("Publisher", &"Blocktime")?;
+    k.set_value("Publisher", &"DeadPixel")?;
     k.set_value("DisplayIcon", &format!("{e},0"))?;
     k.set_value("InstallLocation", &app_dir().to_string_lossy().to_string())?;
     k.set_value("UninstallString", &format!("\"{e}\" --uninstall"))?;
@@ -788,7 +796,7 @@ pub fn uninstall(mut job: Job) -> State {
 }
 
 fn uninstall_inner(state: &mut State, p: &Progress) -> Result<String, String> {
-    let inst = state.installed.clone().ok_or("Blocktime is not installed")?;
+    let inst = state.installed.clone().ok_or("DeadPixel is not installed")?;
     p.stage(0.05, "Checking that the games are closed");
     if !selftest() && game_running() {
         return Err("Trepang2 is running: close it first".into());
@@ -860,20 +868,20 @@ fn uninstall_inner(state: &mut State, p: &Progress) -> Result<String, String> {
 
     if selftest() {
         state.installed = None;
-        return Ok("Blocktime is removed (self-test)".into());
+        return Ok("DeadPixel is removed (self-test)".into());
     }
     p.stage(0.8, "Windows: graphics settings, shortcuts, uninstall entry");
     for (exe, previous) in &inst.gpu_prefs {
         restore_gpu_pref(exe, previous);
     }
     let start_menu = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_default().join("Microsoft\\Windows\\Start Menu\\Programs");
-    let _ = fs::remove_file(start_menu.join("Blocktime.lnk"));
+    let _ = fs::remove_file(start_menu.join("DeadPixel.lnk"));
     if let Some(desktop) = desktop_dir() {
-        let _ = fs::remove_file(desktop.join("Blocktime.lnk"));
+        let _ = fs::remove_file(desktop.join("DeadPixel.lnk"));
     }
     let _ = RegKey::predef(HKEY_CURRENT_USER).delete_subkey_all(UNINSTALL_KEY);
     state.installed = None;
-    Ok("Blocktime is removed. Both games are back to how they were".into())
+    Ok("DeadPixel is removed. Both games are back to how they were".into())
 }
 
 /// After an uninstall run from the installed copy: delete that copy once this process has exited.
@@ -884,7 +892,7 @@ pub fn schedule_self_delete() {
     let _ = keep_state;
     let cmd = format!(
         "ping -n 3 127.0.0.1 >nul & del /f /q \"{}\" & del /f /q \"{}\" & rmdir \"{}\"",
-        dir.join("Blocktime.exe").display(),
+        dir.join("DeadPixel.exe").display(),
         dir.join("state.json").display(),
         dir.display()
     );
@@ -921,11 +929,11 @@ impl Play {
     }
 }
 
-/// Minecraft first (the launcher opens with the Blocktime profile chosen; the player presses PLAY there, the mod
+/// Minecraft first (the launcher opens with the DeadPixel profile chosen; the player presses PLAY there, the mod
 /// opens its world by itself), then Trepang2 (DirectX 11) through Steam.
 pub fn play(state: State, play: Play) {
     let run = || -> Result<(), String> {
-        let inst = state.installed.clone().ok_or("Blocktime is not installed")?;
+        let inst = state.installed.clone().ok_or("DeadPixel is not installed")?;
         if minecraft_window().is_none() {
             play.set(PlayStep::StartingLauncher);
             // an open launcher would neither select the profile nor even show one added while it ran
@@ -953,7 +961,7 @@ pub fn play(state: State, play: Play) {
         play.set(PlayStep::WaitingForWorld);
         // "Minecraft* 26.3 - Singleplayer" in a world; the part after the dash is translated (Russian: "Одиночная игра")
         wait_for(Duration::from_secs(240), || minecraft_window().map(|t| t.contains(" - ")).unwrap_or(false))
-            .ok_or("Minecraft didn't open the Blocktime world")?;
+            .ok_or("Minecraft didn't open the DeadPixel world")?;
         if !game_running() {
             play.set(PlayStep::StartingRon);
             start_game(&inst)?;
@@ -1026,6 +1034,6 @@ pub fn system_language_ru() -> bool {
 /// Whether the installed files are all where the install put them (else: offer a repair).
 pub fn install_intact(inst: &Installed) -> bool {
     inst.game_files.iter().all(|r| rel_path(&inst.game_win64, r).exists())
-        && inst.game_dir.join("mods").join("blocktime-passthrough.jar").exists()
+        && inst.game_dir.join("mods").join("deadpixel-passthrough.jar").exists()
         && inst.mc_dir.join("versions").join(FABRIC_VERSION).join(format!("{FABRIC_VERSION}.json")).exists()
 }
