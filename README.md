@@ -21,8 +21,8 @@ time with Focus and Minecraft slows down with you, frag a brick house into a cra
 - **The two games fight.** Zombies and creepers attack Trepang2's soldiers and cultists; they shoot back with real
   bursts. TNT, creepers, arrows and fireworks hurt Trepang2's people. Your kick sends a mob flying; your gun kills mobs.
 - **Cloak (E)** hides you from Minecraft's mobs too: walk right past them. A mob right in your face is drawn see-through.
-- **Build mode (NumPad 0).** The mouse, wheel and 1–9 go to Minecraft: place blocks on Trepang2's floors, use any item;
-  **E** opens Minecraft's creative inventory.
+- **Build mode (NumPad 0).** The mouse, wheel and 1–9 go to Minecraft: place blocks where you look — on Trepang2's floors,
+  desks, walls and chairs — use any item; **E** opens Minecraft's creative inventory.
 - **Trepang2's level in Minecraft.** Floors, stairs and walls become invisible barriers, so mobs walk every level.
   Every level gets its own part of the Minecraft world.
 
@@ -107,7 +107,8 @@ License: DeadPixel's own code is MIT (see LICENSE). Third-party parts keep their
 - **Игры воюют**: зомби и криперы нападают на солдат и культистов, те отстреливаются настоящими очередями; TNT,
   криперы, стрелы и фейерверки ранят людей Trepang2; пинок отправляет моба в полёт; ваше оружие убивает мобов.
 - **Камуфляж (E)** прячет вас и от мобов Minecraft: можно пройти мимо.
-- **Режим стройки (NumPad 0)**: мышь, колесо и 1–9 идут в Minecraft; **E** — творческий инвентарь.
+- **Режим стройки (NumPad 0)**: мышь, колесо и 1–9 идут в Minecraft; блок ставится туда, куда вы смотрите — на пол,
+  стол, стену, стул Trepang2; **E** — творческий инвентарь.
 - **Уровень Trepang2 в Minecraft**: полы и стены — невидимые барьеры; у каждого уровня своя часть мира Minecraft.
 
 ## Требования

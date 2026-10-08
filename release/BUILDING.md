@@ -1,6 +1,6 @@
 # Building DeadPixel
 
-Most people only need the release: **[Releases](https://github.com/ImmortalSouull/DeadPixel/releases) → DeadPixel-1.1.0.zip → DeadPixel.exe**.
+Most people only need the release: **[Releases](https://github.com/ImmortalSouull/DeadPixel/releases) → DeadPixel-<version>.zip → DeadPixel.exe**.
 
 The pieces and what builds them:
 

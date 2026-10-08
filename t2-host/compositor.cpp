@@ -614,9 +614,13 @@ namespace
 		g_onBackbuffer = false;
 	}
 
+	uint32_t g_sceneDepthWidth = 0; // the bound scene depth's width, read while it was alive (this frame's base pass)
+
 	void bind_scene_depth(effect_runtime *runtime)
 	{
-		if (g_sceneDepthCandidate != g_sceneDepth.handle)
+		// only this frame's candidate is known to be alive: right after a level load the one remembered from the old
+		// level's last frame is already destroyed, and asking about it read 0x68 in d3d11 (crash 2026-10-08 09:13)
+		if (g_basePassSeen && g_sceneDepthCandidate != g_sceneDepth.handle)
 		{
 			cool_down(); // RoN made a new depth buffer (render resolution / DLSS changed)
 			device *dev = runtime->get_device();
@@ -631,6 +635,7 @@ namespace
 			else if (g_sceneDepth.handle != 0)
 			{
 				const resource_desc desc = dev->get_resource_desc(g_sceneDepth);
+				g_sceneDepthWidth = desc.texture.width;
 				if (!dev->create_resource_view(g_sceneDepth, resource_usage::shader_resource, resource_view_desc(format_to_default_typed(desc.texture.format)), &g_sceneDepthSrv))
 					g_sceneDepthSrv = {0};
 				char buffer[160];
@@ -651,13 +656,8 @@ namespace
 		if (const effect_uniform_variable v = runtime->find_uniform_variable(kEffect, "HostDepthTexel"); v.handle != 0)
 		{
 			// how many screen pixels one texel of the scene depth covers (GTA's render resolution vs the back buffer)
-			float texel = 1.0f;
-			if (g_sceneDepth.handle != 0 && g_bbWidth > 0)
-			{
-				const resource_desc d = runtime->get_device()->get_resource_desc(g_sceneDepth);
-				if (d.texture.width > 0)
-					texel = std::max(1.0f, float(g_bbWidth.load()) / float(d.texture.width));
-			}
+			const float texel = g_sceneDepthSrv.handle != 0 && g_sceneDepthWidth > 0 && g_bbWidth > 0
+				? std::max(1.0f, float(g_bbWidth.load()) / float(g_sceneDepthWidth)) : 1.0f;
 			runtime->set_uniform_value_float(v, texel);
 		}
 		if (const effect_uniform_variable v = runtime->find_uniform_variable(kEffect, "HostDepthCopy"); v.handle != 0)

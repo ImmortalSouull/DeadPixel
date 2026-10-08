@@ -90,6 +90,13 @@ def tour(name):
     mc_mark = len(text(MC_LOG))
     res = {"map": name}
     gta("god", v=1)
+    # a clean start: the blocks earlier runs left in this map's region (grass from build mode, broken pillars) out of
+    # the way, so the zombies of steps 4 and 6 have room to stand in front of the player
+    import scene
+    x, y, z, _ = scene.pose()
+    for kind in scene.TEST_BLOCKS:
+        send('{"t":"cmd","c":"fill %d %d %d %d %d %d minecraft:air replace minecraft:%s"}' % (int(x) - 20, int(y) - 6, int(z) - 20, int(x) + 20, int(y) + 6, int(z) + 20, kind))
+    time.sleep(1.0)
     gta("test", v=1)
     # on a first visit Minecraft generates this map's region first: wait for the test blocks (sent after "test blocks
     # placed") to come back as collision boxes here
@@ -101,9 +108,19 @@ def tour(name):
             break
     time.sleep(1.5)
     shot(shots / "1_blocks.png")
-    # 2. the gold block, 3 m ahead on the floor: aim at its middle and shoot until it breaks
+    # 2. the gold block, 3 m ahead on the floor: aim at its middle (where the host put it) and shoot until it breaks
     gta("look", yaw=0, pitch=-22, abs=1)
     time.sleep(0.6)
+    gold = next((m for l in reversed(host_since(mark)) for m in [re.search(r"test gold block at \((-?\d+), (-?\d+), (-?\d+)\)", l)] if m), None)
+    if gold:
+        import math
+        x, y, z, now = scene.pose()
+        gx, gy, gz = int(gold[1]) + 0.5, int(gold[2]) + 0.5, int(gold[3]) + 0.5
+        # UE's yaw is measured in Minecraft's x/z plane the same way; the op turns the yaw by this much, sets the pitch
+        turn = (math.degrees(math.atan2(gz - z, gx - x)) - now + 540.0) % 360.0 - 180.0
+        pitch = math.degrees(math.atan2(gy - y, math.hypot(gx - x, gz - z)))
+        gta("look", yaw=round(turn, 2), pitch=round(pitch, 2), abs=1)
+        time.sleep(0.6)
     for _ in range(6):
         gta("fire", v=4)  # the real trigger: the gun fires, the host counts it as the mouse button's shot
         time.sleep(0.6)

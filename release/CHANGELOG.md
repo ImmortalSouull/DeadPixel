@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.1 — 2026-10-08
+A fix release: please update from 1.1.0.
+- **Crash fixed**: Trepang2 could crash (an access violation in d3d11) on the first frame of a level, right after it
+  loaded: the compositor asked about the previous level's depth buffer, already destroyed. It now only looks at the
+  depth buffer the current frame drew into. Checked: 14 level loads in a row and 3 cold starts, no crash.
+- **Kick**: a zombie pressed right against you (a hunting zombie stands in you) is now kicked whatever the angle; the
+  kick used to miss it.
+- Test blocks (F6) stand on the floor under them, traced from knee height: they no longer end up on shelves.
+- Quieter log in build mode.
+
 ## 1.1.0 — 2026-10-08
 DeadPixel (was Blocktime 1.0.0): a new name, icon and launcher of its own, a big speed-up, and a round of polish.
 - **New look**: the launcher is a dark monitor seen up close — the screen's pixel structure, steel bezels, signal red for

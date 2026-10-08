@@ -1112,6 +1112,28 @@ private:
 			list_characters();
 			return;
 		}
+		if (has("stream"))
+		{
+			// {"op":"stream","n":"KillCultists_SubLevel_MedicalWard"}: load and show a streamed sub-level (tests in parts of a
+			// level the start never loads)
+			const size_t at = m.find("\"n\":\"");
+			const std::string level = at == std::string::npos ? "" : m.substr(at + 5, m.find('"', at + 5) - at - 5);
+			if (level.empty() || !player_alive())
+				return;
+			struct
+			{
+				int32_t linkage, uuid;
+				uint32_t fnName[2];
+				UObject *target;
+			} latent{0, int32_t(m_frame & 0x7fffffff), {0, 0}, m_lastPawn};
+			static_assert(sizeof(latent) == 24);
+			const StringType wide(level.begin(), level.end());
+			ue::Call load(STR("/Script/Engine.GameplayStatics:LoadStreamLevel"));
+			load.set(STR("WorldContextObject"), m_lastPawn).name(STR("LevelName"), wide.c_str()).set(STR("bMakeVisibleAfterLoad"), true)
+				.set(STR("bShouldBlockOnLoad"), true).set(STR("LatentInfo"), latent).run();
+			log("stream level %s requested", level.c_str());
+			return;
+		}
 		if (has("goto") || has("find"))
 		{
 			// {"op":"find","n":"Bed"} lists actors whose name has n (with where they are); {"op":"goto","n":"Bed","v":i}
@@ -1147,9 +1169,16 @@ private:
 				return;
 			}
 			const ue::Vec t = found[size_t(i)].second;
-			ue::Call tp(STR("/Script/Engine.Actor:K2_TeleportTo"));
-			tp.set(STR("DestLocation"), ue::Vec{t.x - 150.0, t.y, t.z + 100.0}).set(STR("DestRotation"), ue::Rot{0.0, 0.0, 0.0}).run(m_lastPawn);
-			log("goto [%d] %ls: %s", i, found[size_t(i)].first->GetName().c_str(), tp.get<bool>(STR("ReturnValue")) ? "ok" : "refused");
+			// beside it: the first of a few spots around it that the capsule fits in
+			bool ok = false;
+			for (const auto [ox, oy] : {std::pair<double, double>{-180.0, 0.0}, {180.0, 0.0}, {0.0, -180.0}, {0.0, 180.0}, {-260.0, -260.0}, {260.0, 260.0}})
+			{
+				ue::Call tp(STR("/Script/Engine.Actor:K2_TeleportTo"));
+				tp.set(STR("DestLocation"), ue::Vec{t.x + ox, t.y + oy, t.z + 100.0}).set(STR("DestRotation"), ue::Rot{0.0, 0.0, 0.0}).run(m_lastPawn);
+				if ((ok = tp.get<bool>(STR("ReturnValue"))))
+					break;
+			}
+			log("goto [%d] %ls: %s", i, found[size_t(i)].first->GetName().c_str(), ok ? "ok" : "refused");
 			return;
 		}
 		if (has("pose"))
@@ -1969,7 +1998,11 @@ private:
 		{
 			const double dx = mob.at.x - m_camLoc.x, dy = mob.at.y - m_camLoc.y;
 			const double dist = std::sqrt(dx * dx + dy * dy);
-			if (dist > 250.0 + mob.half || (dx * fx + dy * fy) / flen < dist * 0.5 || std::abs(mob.at.z + mob.height * 0.5 - (m_camLoc.z - 80.0)) > 200.0)
+			// a mob pressed right against the player (a hunting zombie stands in them) is kicked whatever the angle: at a few
+			// centimetres "in front" means nothing, and the kick missed it every time (2026-10-08)
+			const bool touching = dist < 60.0 + mob.half;
+			if (dist > 250.0 + mob.half || (!touching && (dx * fx + dy * fy) / flen < dist * 0.5) ||
+				std::abs(mob.at.z + mob.height * 0.5 - (m_camLoc.z - 80.0)) > 200.0)
 				continue; // out of reach, not in front (60 degree cone), or another storey
 			// UE (x, y) -> Minecraft (x, z): the same horizontal directions
 			send("{\"t\":\"mobkick\",\"id\":%d,\"d\":%.1f,\"dx\":%.3f,\"dz\":%.3f,\"f\":%.2f}", mob.id, 9.0, fx / flen, fy / flen, 1.8);
@@ -3702,7 +3735,7 @@ private:
 				{
 					const ue::Vec n = m_aim.last_normal();
 					std::snprintf(aim, sizeof(aim), ",\"aim\":[%.4f,%.4f,%.4f,%.3f,%.3f,%.3f]", mcx(hit.x), mcy(hit.z), mcz(hit.y), n.x, n.z, n.y);
-					if (m_frame % 120 == 0)
+					if (m_probeDebug && m_frame % 120 == 0)
 						log("build aim: %.2f m, %ls", std::hypot(hit.x - m_camLoc.x, hit.y - m_camLoc.y, hit.z - m_camLoc.z) / 100.0, m_aim.last_component().c_str());
 				}
 			}
@@ -3852,7 +3885,10 @@ private:
 		// floor put the test pillars 1 m in the air, 2026-10-08). The surface rounded to the nearest block boundary.
 		auto floor_y = [&](int bx, int bz) {
 			ue::Vec hit{};
-			const double top = (feetY + 1.8 - m_yOffset) * 100.0, bottom = (feetY - 4.0 - m_yOffset) * 100.0;
+			// near the player's own floor only: from a quarter metre up (a step counts; a table, a bed or a shelf doesn't -
+			// a trace started inside a table top caught its underside) to 1.2 m down (a sunken floor counts; a lower
+			// storey seen through a grating doesn't)
+			const double top = (feetY + 0.25 - m_yOffset) * 100.0, bottom = (feetY - 1.2 - m_yOffset) * 100.0;
 			if (m_lastPawn != nullptr && m_ground.trace(m_lastPawn, ue::Vec{uex(bx + 0.5), uey(bz + 0.5), top}, ue::Vec{uex(bx + 0.5), uey(bz + 0.5), bottom}, hit, live_block_actor()))
 				return int(std::floor(mcy(hit.z) + 0.5));
 			return fy;
@@ -3861,6 +3897,7 @@ private:
 		at(3.0, 0.0, bx, bz);
 		by = floor_y(bx, bz);
 		send("{\"t\":\"cmd\",\"c\":\"setblock %d %d %d minecraft:gold_block\"}", bx, by, bz);
+		log("test gold block at (%d, %d, %d)", bx, by, bz); // the tour aims at it
 		at(6.0, 1.5, bx, bz);
 		by = floor_y(bx, bz);
 		send("{\"t\":\"cmd\",\"c\":\"fill %d %d %d %d %d %d minecraft:diamond_block\"}", bx, by, bz, bx, by + 2, bz);
