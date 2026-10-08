@@ -1,6 +1,67 @@
-# Changelog
+# Changelog / История изменений
+
+**Русский** · [English](#english)
 
 ## 1.1.1 — 2026-10-08
+Обновитесь с 1.1.0: там Trepang2 мог вылететь при загрузке уровня.
+
+**Исправлено (относительно 1.1.0)**
+- Вылет Trepang2 в первом кадре уровня (ошибка доступа в d3d11): мод обращался к буферу глубины прошлого уровня,
+  уже уничтоженного. Проверено: 14 загрузок карт подряд и 3 холодных запуска — без вылетов.
+- Пинок промахивался по зомби, стоящему вплотную: теперь моб ближе 60 см отлетает при любом угле.
+- Тестовые блоки (F6) вставали на столы, полки и нижние ярусы под решётками.
+- Лишние записи в журнале мода в режиме стройки.
+
+**Известные баги**
+- Охотящийся зомби подходит вплотную и стоит «в» игроке (рисуется полупрозрачным, пинок отбрасывает).
+- Дым большого взрыва Minecraft закрывает обзор на 2–3 секунды.
+- Запуск через официальный Minecraft Launcher (кнопка PLAY) не проверен живым нажатием.
+
+## 1.1.0 — 2026-10-08
+Новое имя DeadPixel (было Blocktime), новый лаунчер и иконка.
+
+**Новое**
+- До +40 % FPS с модом при той же картинке (105 → 148 к/с на одной сцене, RTX 4050).
+- TNT из Minecraft немного крушит комнаты Trepang2: мебель разлетается, выбивается одна тонкая стеновая панель,
+  остаётся гарь; колонны, двери, полы и сюжетные объекты не трогаются. Выключается в НАСТРОЙКАХ.
+- Стройка по взгляду: блок встаёт на ту поверхность Trepang2, куда вы смотрите.
+- Камуфляж прячет от мобов Minecraft: зомби останавливаются, как только вы исчезаете.
+
+**Исправлено (относительно 1.0.0)**
+- Граната на полу не ломала постройки; блоки при стройке вставали в воздухе; зомби у лица исчезал вместе с
+  блоками за ним; тонкие предметы пропускали блоки; дыры в невидимом полу под столами; блоки утопали в полу до
+  0,4 м на некоторых картах; зомби у людей Trepang2 не находили места на щебне; старые барьеры прошлых сессий;
+  зависания Minecraft на 40–60 с при смене уровня; постройки без коллизии при повторном заходе; вылет от TNT над
+  разорванными солдатами.
+
+**Известные баги** (→ где исправлены)
+- Вылет в первом кадре уровня → 1.1.1
+- Пинок промахивался по зомби вплотную → 1.1.1
+- Тестовые блоки вставали на столы и полки → 1.1.1
+
+## 1.0.0 — 2026-10-07 (Blocktime)
+Первый релиз: Minecraft внутри Trepang2 — замедление на двоих, блоки как укрытие, воронки от гранат, бой зомби с
+солдатами, режим стройки, установщик.
+
+**Известные баги** (→ где исправлены)
+- Граната на полу не ломала постройки → 1.1.0
+- Камуфляж не прятал от мобов → 1.1.0
+- Блоки при стройке вставали в воздухе на некоторых картах → 1.1.0
+- Зомби у лица исчезал вместе с блоками за ним → 1.1.0
+- Тонкие предметы пропускали блоки за ними → 1.1.0
+- Дыры в невидимом полу под столами → 1.1.0
+- Блоки утопали в полу до 0,4 м на некоторых картах → 1.1.0
+- Зависания Minecraft на 40–60 с при смене уровня; постройки без коллизии при повторном заходе → 1.1.0
+- Вылет от TNT над убитыми и разорванными солдатами → 1.1.0
+- FPS ниже, чем мог бы быть → 1.1.0
+- Пинок промахивался по зомби вплотную → 1.1.1
+
+---
+
+<a name="english"></a>
+## English
+
+### 1.1.1 — 2026-10-08
 A fix release: please update from 1.1.0.
 - **Crash fixed**: Trepang2 could crash (an access violation in d3d11) on the first frame of a level, right after it
   loaded: the compositor asked about the previous level's depth buffer, already destroyed. It now only looks at the
@@ -10,7 +71,12 @@ A fix release: please update from 1.1.0.
 - Test blocks (F6) stand on the floor under them, traced from knee height: they no longer end up on shelves.
 - Quieter log in build mode.
 
-## 1.1.0 — 2026-10-08
+**Known bugs**
+- A hunting zombie walks right up and stands "in" the player (drawn see-through; a kick throws it off).
+- The smoke of a big Minecraft explosion covers the view for 2–3 seconds.
+- Starting through the official Minecraft Launcher (the PLAY button) wasn't tested with a real click.
+
+### 1.1.0 — 2026-10-08
 DeadPixel (was Blocktime 1.0.0): a new name, icon and launcher of its own, a big speed-up, and a round of polish.
 - **New look**: the launcher is a dark monitor seen up close — the screen's pixel structure, steel bezels, signal red for
   the one thing that matters, status LEDs, an oscilloscope trace for Focus, pixel-stepped corners everywhere, and a
@@ -48,5 +114,24 @@ DeadPixel (was Blocktime 1.0.0): a new name, icon and launcher of its own, a big
   and mobs fell through; the probe now tries again off-centre.
 - **Crash fixed**: TNT over soldiers already killed and torn apart by an earlier blast.
 
-## 1.0.0 — 2026-10-07 (as Blocktime)
-First release: Trepang2 × Minecraft.
+**Known bugs** (→ fixed in)
+- A crash on the first frame of a level → 1.1.1
+- The kick missed a zombie pressed against you → 1.1.1
+- Test blocks stood on desks and shelves → 1.1.1
+
+### 1.0.0 — 2026-10-07 (as Blocktime)
+First release: Trepang2 × Minecraft — bullet time for both games, blocks as cover, grenade craters, zombies vs
+soldiers, build mode, an installer.
+
+**Known bugs** (→ fixed in)
+- A frag on the floor broke nothing in builds → 1.1.0
+- Cloak didn't hide you from mobs → 1.1.0
+- Blocks landed in the air in build mode on some maps → 1.1.0
+- A zombie in your face faded out with the blocks behind it → 1.1.0
+- Thin things let blocks behind them show through → 1.1.0
+- Holes in the invisible floor under desks → 1.1.0
+- Blocks sat up to 0.4 m deep in the floor on some maps → 1.1.0
+- 40–60 s Minecraft freezes on level changes; builds without collision on a second visit → 1.1.0
+- A crash from TNT over killed and torn-apart soldiers → 1.1.0
+- Lower FPS than necessary → 1.1.0
+- The kick missed a zombie pressed against you → 1.1.1
